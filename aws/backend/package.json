@@ -1,0 +1,17 @@
+{
+  "name": "reservata-lambda-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/handlers/bootstrap.mjs && node --check src/handlers/resources.mjs && node --check src/handlers/reservations.mjs && node --check src/handlers/payments.mjs && node --check src/handlers/visitors.mjs && node --check src/handlers/admin.mjs && node --check src/lib/workflows.mjs && node --check scripts/seed.mjs",
+    "test": "node --test test/*.test.mjs",
+    "seed": "node scripts/seed.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.0.0"
+  }
+}

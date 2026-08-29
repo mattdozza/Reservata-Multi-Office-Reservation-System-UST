@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "reservata-dev"
+resolve_s3 = true
+s3_prefix = "reservata-dev"
+region = "ap-southeast-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+parameter_overrides = "EnvironmentName=dev AllowedOrigin=http://127.0.0.1:5178 UniversitySsoIssuer=https://REPLACE-WITH-UNIVERSITY-ISSUER UniversitySsoAudience=REPLACE-WITH-CLIENT-ID"
+tags = "Application=Reservata Environment=dev"

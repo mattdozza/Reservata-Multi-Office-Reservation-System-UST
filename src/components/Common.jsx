@@ -1,0 +1,398 @@
+import { useState } from "react";
+import { AlertTriangle, CheckCircle2, FileText, Info, Upload, X } from "lucide-react";
+import { badgeClass, displayTimestamp, formatDate } from "../utils.js";
+import { approvalProgress } from "../workflows.js";
+
+export function Badge({ status, children, className = "" }) {
+  return <span className={`badge ${badgeClass(status)} ${className}`.trim()}>{children ?? status}</span>;
+}
+
+export function CardHeader({ title, subtitle, action }) {
+  return (
+    <div className="card-header">
+      <div>
+        <h2>{title}</h2>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+export function EmptyState({ children }) {
+  return <div className="empty-state">{children}</div>;
+}
+
+export function Metrics({ items, columns = "metrics-grid" }) {
+  return (
+    <div className={`grid ${columns}`}>
+      {items.map(({ label, value, caption, accent, color }) => (
+        <article
+          className="card metric-card"
+          style={{ "--accent": accent, "--metric-color": color }}
+          key={label}
+        >
+          <small>{label}</small>
+          <strong>{value}</strong>
+          <p>{caption}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export function ChartSummary({ title, items }) {
+  const max = Math.max(1, ...items.map((item) => Number(item.value) || 0));
+  return (
+    <article className="card chart-card">
+      <CardHeader title={title} />
+      <div className="chart-list">
+        {items.map((item) => (
+          <div className="chart-row" key={item.label}>
+            <span>{item.label}</span>
+            <div className="chart-track"><b style={{ width: `${Math.max(6, (Number(item.value) || 0) / max * 100)}%` }} /></div>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+export function DetailModal({ title, subtitle, onClose, children, className = "" }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className={`modal-panel ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <CardHeader
+          title={title}
+          subtitle={subtitle}
+          action={<button className="icon-button" aria-label="Close details" onClick={onClose} type="button"><X size={17} /></button>}
+        />
+        <div className="modal-content">{children}</div>
+      </section>
+    </div>
+  );
+}
+
+export function ConfirmModal({
+  title,
+  message,
+  tone = "primary",
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  details = [],
+  onConfirm,
+  onCancel
+}) {
+  const actionClass = tone === "success" ? "success-button" : tone === "danger" ? "danger-button" : "primary-button";
+  const icon = tone === "success" ? <CheckCircle2 size={22} /> : tone === "danger" ? <AlertTriangle size={22} /> : <Info size={22} />;
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onCancel}>
+      <section className="modal-panel confirm-panel" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="confirm-heading">
+          <div className={`confirm-icon confirm-${tone}`} aria-hidden="true">{icon}</div>
+          <CardHeader title={title} subtitle={message} />
+        </div>
+        {!!details.length && (
+          <div className="confirm-details">
+            {details.map(([label, value]) => (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="confirm-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">{cancelLabel}</button>
+          <button className={actionClass} onClick={onConfirm} type="button">{confirmLabel}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function DetailGrid({ items }) {
+  return (
+    <div className="detail-grid">
+      {items.map(([label, value]) => (
+        <div key={label}>
+          <label className="field-label">{label}</label>
+          <div className="detail-box">{value === "" || value == null ? "None" : value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReservationDetails({ store, reservation }) {
+  const payment = store.data.payments.find((item) => item.reservationId === reservation.id || item.id === reservation.paymentId);
+  const activity = store.data.activity.filter((item) => [reservation.resourceName, reservation.id].includes(item.target) || String(item.target || "").includes(reservation.resourceName));
+  return (
+    <>
+      <DetailGrid items={[
+        ["Request ID", reservation.id],
+        ["Requester", reservation.requester],
+        ["Resource", reservation.resourceName],
+        ["Office", reservation.office],
+        ["Schedule", `${formatDate(reservation.date)} ${reservation.start}-${reservation.end}`],
+        ["Warning", store.isReservationOverdue(reservation) ? "Scheduled time has passed without final confirmation or rejection." : "None"],
+        ["Quantity / attendees", reservation.quantity],
+        ["Payment", reservation.requiresPayment ? payment?.status || "Required" : "Not required"],
+        ["Decision reason", reservation.rejectionReason || "None"],
+        ["Purpose", reservation.purpose]
+      ]} />
+      <ApprovalTrail reservation={reservation} />
+      {payment && (
+        <div className="detail-section">
+          <h3>Payment</h3>
+          <DetailGrid items={[
+            ["Payment ID", payment.id],
+            ["Amount", `PHP ${payment.amount}`],
+            ["Receipt", payment.receipt],
+            ["Status", payment.status],
+            ["Receipt note", payment.rejectionReason || "None"]
+          ]} />
+          <ReceiptPreview payment={payment} />
+        </div>
+      )}
+      {!!reservation.supportingDocuments?.length && (
+        <div className="detail-section">
+          <h3>Supporting Documents</h3>
+          {reservation.supportingDocuments.map((document) => (
+            <div className="document-row" key={document.id || document.name}>
+              <FileText size={18} aria-hidden="true" />
+              <div>
+                <strong>{document.name}</strong>
+                <p className="detail-note">{document.status || "Submitted"} · {document.uploadedAt || "Uploaded"}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="detail-section">
+        <h3>Activity</h3>
+        {activity.length ? activity.slice(0, 5).map((item, index) => (
+          <p className="detail-note" key={`${item.time}-${index}`}>{item.action} · {item.actor} · {displayTimestamp(item.time)}{item.details ? ` · ${item.details}` : ""}</p>
+        )) : <p className="detail-note">No activity records tied to this request yet.</p>}
+      </div>
+    </>
+  );
+}
+
+function receiptPayload(file) {
+  if (!file || file.size > 700_000 || !["image/jpeg", "image/png", "application/pdf"].includes(file.type)) return Promise.resolve(file);
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      file.previewData = reader.result;
+      resolve(file);
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatFileSize(size = 0) {
+  if (size >= 1_000_000) return `${(size / 1_000_000).toFixed(1)} MB`;
+  if (size >= 1_000) return `${Math.round(size / 1_000)} KB`;
+  return `${size} bytes`;
+}
+
+export function ReceiptPreview({ payment }) {
+  if (!payment?.receiptPreview) {
+    return <p className="detail-note">No receipt preview is available yet.</p>;
+  }
+  if (payment.receiptType === "application/pdf") {
+    return <iframe className="receipt-preview" title={`${payment.id} receipt preview`} src={payment.receiptPreview} />;
+  }
+  return <img className="receipt-preview receipt-image" src={payment.receiptPreview} alt={`${payment.id} receipt preview`} />;
+}
+
+export function ReservationRows({ store, items, onUpload, onDocumentUpload }) {
+  const [selected, setSelected] = useState(null);
+  const [pendingReceipt, setPendingReceipt] = useState(null);
+  const [pendingDocument, setPendingDocument] = useState(null);
+  if (!items.length) return <EmptyState>No reservation requests yet.</EmptyState>;
+
+  return (
+    <>
+      {items.map((item) => (
+        <div className="list-item" key={item.id}>
+          <div>
+            <Badge status={item.status} />
+            {store.isReservationOverdue(item) && <Badge status="Overdue Review" className="overdue-badge">Overdue</Badge>}
+            <h3 className="item-title">{item.resourceName}</h3>
+            <p>
+              {item.requester} · {item.office} · {formatDate(item.date)} {item.start}-{item.end}
+            </p>
+            <p>{item.purpose}</p>
+            <ApprovalTrail reservation={item} compact />
+          </div>
+          <div className="split-actions">
+            <button className="secondary-button" onClick={() => setSelected(item)} type="button">View Details</button>
+            {store.session.activeRole === "requester" && !["Rejected", "Cancelled", "Completed"].includes(item.status) && onDocumentUpload && (
+              <label className="secondary-button file-button">
+                Upload Document
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (file) setPendingDocument({ item, file: await receiptPayload(file) });
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+            {store.session.activeRole === "requester" && item.status === "For Payment" && (
+              <label className="warning-button file-button">
+                Upload Receipt
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (file) setPendingReceipt({ item, file: await receiptPayload(file) });
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+        </div>
+      ))}
+      {selected && (
+        <DetailModal title={selected.resourceName} subtitle={`${selected.id} · ${selected.status}`} onClose={() => setSelected(null)}>
+          <ReservationDetails store={store} reservation={selected} />
+        </DetailModal>
+      )}
+      {pendingReceipt && (
+        <DetailModal title="Upload receipt?" subtitle={`${pendingReceipt.item.resourceName} · ${pendingReceipt.item.id}`} onClose={() => setPendingReceipt(null)}>
+          <div className="receipt-confirm">
+            <div className="receipt-file-summary">
+              <FileText size={20} aria-hidden="true" />
+              <div>
+                <strong>{pendingReceipt.file.name}</strong>
+                <p>{pendingReceipt.file.type || "Unknown file type"} · {formatFileSize(pendingReceipt.file.size)}</p>
+              </div>
+            </div>
+            <ReceiptPreview payment={{
+              id: pendingReceipt.item.id,
+              receiptPreview: pendingReceipt.file.previewData,
+              receiptType: pendingReceipt.file.type
+            }} />
+            <div className="split-actions form-actions">
+              <button className="secondary-button" onClick={() => setPendingReceipt(null)} type="button">Cancel</button>
+              <button
+                className="primary-button icon-text-button"
+                onClick={async () => {
+                  const current = pendingReceipt;
+                  setPendingReceipt(null);
+                  await onUpload(current.item.id, current.file);
+                }}
+                type="button"
+              >
+                <Upload size={16} /> Upload Receipt
+              </button>
+            </div>
+          </div>
+        </DetailModal>
+      )}
+      {pendingDocument && (
+        <DetailModal title="Upload supporting document?" subtitle={`${pendingDocument.item.resourceName} · ${pendingDocument.item.id}`} onClose={() => setPendingDocument(null)}>
+          <div className="receipt-confirm">
+            <div className="receipt-file-summary">
+              <FileText size={20} aria-hidden="true" />
+              <div>
+                <strong>{pendingDocument.file.name}</strong>
+                <p>{pendingDocument.file.type || "Unknown file type"} · {formatFileSize(pendingDocument.file.size)}</p>
+              </div>
+            </div>
+            <ReceiptPreview payment={{
+              id: pendingDocument.item.id,
+              receiptPreview: pendingDocument.file.previewData,
+              receiptType: pendingDocument.file.type
+            }} />
+            <div className="split-actions form-actions">
+              <button className="secondary-button" onClick={() => setPendingDocument(null)} type="button">Cancel</button>
+              <button
+                className="primary-button icon-text-button"
+                onClick={async () => {
+                  const current = pendingDocument;
+                  setPendingDocument(null);
+                  await onDocumentUpload(current.item.id, current.file);
+                }}
+                type="button"
+              >
+                <Upload size={16} /> Upload Document
+              </button>
+            </div>
+          </div>
+        </DetailModal>
+      )}
+    </>
+  );
+}
+
+export function ApprovalTrail({ reservation, compact = false }) {
+  const steps = reservation.approvalSteps || [];
+  if (!steps.length) return null;
+  const progress = approvalProgress(reservation);
+  return (
+    <div className={`approval-trail ${compact ? "compact" : ""}`}>
+      <p className="approval-summary">{progress.completed} of {progress.total} approval steps completed</p>
+      <div className="approval-step-list" aria-label="Approval route">
+        {steps.map((step) => (
+          <div className={`approval-step approval-step-${step.status.toLowerCase()}`} key={step.id}>
+            <span className={`step-dot step-${step.status.toLowerCase()}`} aria-hidden="true" />
+            <span>
+              <strong>{step.name}</strong>
+              <small>
+                {step.office} · {step.status}
+                {step.decidedBy && ` · ${step.decidedBy}`}
+                {step.decidedAt && ` · ${displayTimestamp(step.decidedAt)}`}
+              </small>
+              {step.reason && <em>{step.reason}</em>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function ResourceMiniRows({ items }) {
+  if (!items.length) return <EmptyState>No resources found.</EmptyState>;
+  return items.map((item) => (
+    <div className="list-item" key={item.id}>
+      <div>
+        <Badge status={item.status} />
+        <h3 className="item-title">{item.name}</h3>
+        <p>{item.type} · {item.office}</p>
+      </div>
+    </div>
+  ));
+}
+
+export function ActivityRows({ store, limit = 50 }) {
+  const items = store.visibleActivity.slice(0, limit);
+  if (!items.length) return <EmptyState>No activity records for this role.</EmptyState>;
+  return items.map((item, index) => (
+    <div className="list-item" key={`${item.time}-${item.action}-${index}`}>
+      <div>
+        <h3>{item.action}</h3>
+        <p>{item.actor} · {item.target} · {displayTimestamp(item.time)}{item.details ? ` · ${item.details}` : ""}</p>
+      </div>
+    </div>
+  ));
+}
+
+export function LoadingScreen() {
+  return (
+    <main className="loading-screen" aria-live="polite">
+      <img className="brand-logo loading-brand-logo" src="/images/logo2.svg" alt="University of Santo Tomas seal" />
+      <strong>Loading RESERVATA...</strong>
+    </main>
+  );
+}

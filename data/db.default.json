@@ -1,0 +1,367 @@
+{
+  "resources": [
+    {
+      "id": "R-001",
+      "name": "Robot 01",
+      "type": "Equipment",
+      "office": "EdTech",
+      "location": "CICS Lab",
+      "capacity": 1,
+      "status": "Available",
+      "requiresPayment": false,
+      "driver": "Not applicable"
+    },
+    {
+      "id": "R-002",
+      "name": "Bobots Kit",
+      "type": "Equipment",
+      "office": "EdTech",
+      "location": "CICS Lab",
+      "capacity": 4,
+      "status": "Available",
+      "requiresPayment": false,
+      "driver": "Not applicable"
+    },
+    {
+      "id": "R-003",
+      "name": "Loaner Laptops",
+      "type": "Equipment",
+      "office": "EdTech",
+      "location": "CICS Stockroom",
+      "capacity": 12,
+      "status": "Reserved",
+      "requiresPayment": false,
+      "driver": "Not applicable"
+    },
+    {
+      "id": "R-004",
+      "name": "Multipurpose Hall",
+      "type": "Facility",
+      "office": "Simbahayan",
+      "location": "UST Main Building",
+      "capacity": 120,
+      "status": "Available",
+      "requiresPayment": true,
+      "fee": 1500,
+      "workflowTemplateId": "WF-VENUE",
+      "driver": "Not applicable"
+    },
+    {
+      "id": "R-005",
+      "name": "Community Outreach Van",
+      "type": "Vehicle",
+      "office": "Simbahayan",
+      "location": "Carpark B",
+      "capacity": 12,
+      "status": "Available",
+      "requiresPayment": true,
+      "fee": 850,
+      "driver": "With Driver"
+    },
+    {
+      "id": "R-006",
+      "name": "Dominican Shuttle",
+      "type": "Vehicle",
+      "office": "Dominican Residence",
+      "location": "Residence Garage",
+      "capacity": 8,
+      "status": "Under Maintenance",
+      "requiresPayment": false,
+      "driver": "With Driver"
+    },
+    {
+      "id": "R-007",
+      "name": "Projector Set A",
+      "type": "Equipment",
+      "office": "Simbahayan",
+      "location": "AV Storage",
+      "capacity": 1,
+      "status": "Available",
+      "requiresPayment": false,
+      "driver": "Not applicable"
+    },
+    {
+      "id": "R-008",
+      "name": "Visitor Parking Bay",
+      "type": "Visitor Service",
+      "office": "OSG",
+      "location": "Main Gate",
+      "capacity": 20,
+      "status": "Available",
+      "requiresPayment": false,
+      "driver": "Not applicable"
+    }
+  ],
+  "reservations": [
+    {
+      "id": "REQ-2026-001",
+      "requester": "Maria Jua",
+      "resourceId": "R-001",
+      "resourceName": "Robot 01",
+      "office": "EdTech",
+      "type": "Equipment",
+      "date": "2026-08-27",
+      "start": "08:00",
+      "end": "12:00",
+      "purpose": "Robotics class prototype testing",
+      "status": "Pending",
+      "submittedAt": "2026-08-24 09:10",
+      "requiresPayment": false
+    },
+    {
+      "id": "REQ-2026-002",
+      "requester": "Anna Villanueva",
+      "resourceId": "R-004",
+      "resourceName": "Multipurpose Hall",
+      "office": "Simbahayan",
+      "type": "Facility",
+      "date": "2026-08-28",
+      "start": "13:00",
+      "end": "16:00",
+      "purpose": "Community extension orientation",
+      "status": "For Payment",
+      "submittedAt": "2026-08-24 10:34",
+      "requiresPayment": true,
+      "paymentId": "PAY-001"
+    },
+    {
+      "id": "REQ-2026-003",
+      "requester": "Fr. Jose",
+      "resourceId": "R-005",
+      "resourceName": "Community Outreach Van",
+      "office": "Simbahayan",
+      "type": "Vehicle",
+      "date": "2026-08-29",
+      "start": "09:00",
+      "end": "15:00",
+      "purpose": "Outreach partner visit",
+      "status": "Approved",
+      "submittedAt": "2026-08-23 14:22",
+      "requiresPayment": true,
+      "paymentId": "PAY-002"
+    },
+    {
+      "id": "REQ-2026-004",
+      "requester": "Paolo Reyes",
+      "resourceId": "R-007",
+      "resourceName": "Projector Set A",
+      "office": "Simbahayan",
+      "type": "Equipment",
+      "date": "2026-08-30",
+      "start": "10:00",
+      "end": "12:00",
+      "purpose": "College seminar documentation",
+      "status": "Pending",
+      "submittedAt": "2026-08-24 11:18",
+      "requiresPayment": false
+    }
+  ],
+  "payments": [
+    {
+      "id": "PAY-001",
+      "reservationId": "REQ-2026-002",
+      "requester": "Anna Villanueva",
+      "amount": 1500,
+      "receipt": "receipt-REQ-2026-002.jpg",
+      "status": "Pending Verification"
+    },
+    {
+      "id": "PAY-002",
+      "reservationId": "REQ-2026-003",
+      "requester": "Fr. Jose",
+      "amount": 850,
+      "receipt": "receipt-REQ-2026-003.jpg",
+      "status": "Verified"
+    }
+  ],
+  "visitors": [
+    {
+      "id": "VIS-001",
+      "requester": "Paolo Reyes",
+      "visitor": "Dr. Elena Cruz",
+      "organization": "Department of Education",
+      "purpose": "University partnership meeting",
+      "date": "2026-08-25",
+      "time": "09:30",
+      "guests": 3,
+      "cars": 1,
+      "plate": "NCR 4821",
+      "parking": "A1",
+      "status": "Pending"
+    },
+    {
+      "id": "VIS-002",
+      "requester": "Paolo Reyes",
+      "visitor": "Manila Science High School",
+      "organization": "MSHS",
+      "purpose": "Campus familiarization visit",
+      "date": "2026-08-25",
+      "time": "10:30",
+      "guests": 12,
+      "cars": 2,
+      "plate": "NFG 101 / DTR 904",
+      "parking": "A2-A3",
+      "status": "Approved"
+    },
+    {
+      "id": "VIS-003",
+      "requester": "College Secretary",
+      "visitor": "Atty. Ramon de Leon",
+      "organization": "CHED",
+      "purpose": "Official courtesy call",
+      "date": "2026-08-25",
+      "time": "14:00",
+      "guests": 2,
+      "cars": 1,
+      "plate": "GOV 883",
+      "parking": "B1",
+      "status": "Arrived"
+    }
+  ],
+  "people": [
+    {
+      "name": "Maria Jua",
+      "email": "maria.jua@ust.edu.ph",
+      "office": "Student Body",
+      "role": "Requester",
+      "status": "Active"
+    },
+    {
+      "name": "Maria Santos",
+      "email": "maria.santos@ust.edu.ph",
+      "office": "Simbahayan",
+      "role": "Office Admin",
+      "status": "Active"
+    },
+    {
+      "name": "Andrea Reyes",
+      "email": "andrea.reyes@ust.edu.ph",
+      "office": "OSG",
+      "role": "OSG Admin",
+      "status": "Active"
+    },
+    {
+      "name": "Sandra Alma",
+      "email": "sandra.alma@ust.edu.ph",
+      "office": "All Offices",
+      "role": "Super Admin",
+      "status": "Active"
+    },
+    {
+      "name": "Paolo Reyes",
+      "email": "paolo.reyes@ust.edu.ph",
+      "office": "CICS",
+      "role": "OSG Requester",
+      "status": "Active"
+    },
+    {
+      "name": "Felix Mendoza",
+      "email": "facilities.admin@ust.edu.ph",
+      "office": "Facilities Management",
+      "role": "Office Admin",
+      "status": "Active"
+    },
+    {
+      "name": "EdTech Admin",
+      "email": "edtech.admin@ust.edu.ph",
+      "office": "EdTech",
+      "role": "Office Admin",
+      "status": "Active"
+    }
+  ],
+  "offices": [
+    { "id": "OFF-EDTECH", "name": "EdTech", "status": "Active" },
+    { "id": "OFF-SIMBAHAYAN", "name": "Simbahayan", "status": "Active" },
+    { "id": "OFF-DOMINICAN", "name": "Dominican Residence", "status": "Active" },
+    { "id": "OFF-FACILITIES", "name": "Facilities Management", "status": "Active" },
+    { "id": "OFF-OSG", "name": "OSG", "status": "Active" }
+  ],
+  "approvalTemplates": [
+    {
+      "id": "WF-BASIC",
+      "name": "Basic Resource Approval",
+      "resourceType": "All",
+      "status": "Active",
+      "steps": [
+        { "id": "OWNER", "name": "Resource Owner Review", "office": "$OWNER", "sequence": 1, "condition": "always" }
+      ]
+    },
+    {
+      "id": "WF-VENUE",
+      "name": "Venue and Event Approval",
+      "resourceType": "Facility",
+      "status": "Active",
+      "steps": [
+        { "id": "OWNER", "name": "Venue Owner Review", "office": "$OWNER", "sequence": 1, "condition": "always" },
+        { "id": "FACILITIES", "name": "Facilities and Setup Review", "office": "Facilities Management", "sequence": 2, "condition": "setupRequired" },
+        { "id": "OSG", "name": "External Guest and Security Review", "office": "OSG", "sequence": 2, "condition": "externalVisitors" },
+        { "id": "PARKING", "name": "Visitor Parking Review", "office": "OSG", "sequence": 2, "condition": "parkingRequired" }
+      ]
+    }
+  ],
+  "systemSettings": [
+    {
+      "id": "SYSTEM",
+      "defaultWorkflowTemplateId": "WF-BASIC",
+      "maxReservationHours": 12,
+      "parkingCapacity": 20,
+      "requirementOptions": [
+        {
+          "id": "setupRequired",
+          "label": "Setup or maintenance support",
+          "help": "Routes the request to Facilities when setup, room preparation, or maintenance work is needed.",
+          "status": "Active",
+          "locked": true
+        },
+        {
+          "id": "externalVisitors",
+          "label": "External visitors or guests",
+          "help": "Routes the request to OSG when people from outside the university will attend.",
+          "status": "Active",
+          "locked": true
+        },
+        {
+          "id": "parkingRequired",
+          "label": "Visitor parking",
+          "help": "Routes the request to OSG when visitor parking slots are needed.",
+          "status": "Active",
+          "locked": true
+        }
+      ]
+    }
+  ],
+  "notifications": [
+    {
+      "id": "N-001",
+      "user": "Maria Jua",
+      "message": "Robot 01 request is pending EdTech review.",
+      "unread": true
+    },
+    {
+      "id": "N-002",
+      "user": "Anna Villanueva",
+      "message": "Please wait for payment verification before final confirmation.",
+      "unread": true
+    }
+  ],
+  "activity": [
+    {
+      "action": "Reservation submitted",
+      "actor": "Maria Jua",
+      "target": "Robot 01",
+      "time": "Today 09:10"
+    },
+    {
+      "action": "Payment receipt uploaded",
+      "actor": "Anna Villanueva",
+      "target": "Multipurpose Hall",
+      "time": "Today 10:34"
+    },
+    {
+      "action": "Visitor request approved",
+      "actor": "Andrea Reyes",
+      "target": "Manila Science High School",
+      "time": "Yesterday 16:18"
+    }
+  ]
+}

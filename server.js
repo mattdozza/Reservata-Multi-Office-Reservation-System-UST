@@ -1,0 +1,689 @@
+const crypto = require("crypto");
+const fs = require("fs");
+const http = require("http");
+const path = require("path");
+
+const PORT = Number(process.env.PORT || 5178);
+const HOST = process.env.HOST || "127.0.0.1";
+const ROOT = __dirname;
+const DB_PATH = path.join(ROOT, "data", "db.json");
+const ACCOUNTS_PATH = path.join(ROOT, "data", "accounts.json");
+const DIST_PATH = path.join(ROOT, "dist");
+const STATIC_ROOT = fs.existsSync(DIST_PATH) ? DIST_PATH : ROOT;
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const sessions = new Map();
+const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment"];
+const BUSINESS_DAY_START = 8 * 60;
+const BUSINESS_DAY_END = 17 * 60;
+const DEFAULT_SLOT_MINUTES = 60;
+
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8"
+};
+
+const ROLE_MUTATIONS = {
+  Requester: ["reservations", "payments", "notifications", "activity"],
+  "Office Admin": ["resources", "reservations", "payments", "notifications", "activity"],
+  "Super Admin": ["resources", "people", "offices", "approvalTemplates", "systemSettings", "notifications", "activity"],
+  "OSG Admin": ["reservations", "payments", "visitors", "notifications", "activity"],
+  "OSG Requester": ["visitors", "notifications", "activity"]
+};
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function sendJson(response, status, data) {
+  response.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff"
+  });
+  response.end(JSON.stringify(data, null, 2));
+}
+
+function sendText(response, status, text) {
+  response.writeHead(status, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "X-Content-Type-Options": "nosniff"
+  });
+  response.end(text);
+}
+
+function readDatabase() {
+  return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+}
+
+function writeDatabase(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+}
+
+function readAccounts() {
+  return JSON.parse(fs.readFileSync(ACCOUNTS_PATH, "utf8"));
+}
+
+function readBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 2_000_000) {
+        reject(new HttpError(413, "Request body too large."));
+        request.destroy();
+      }
+    });
+    request.on("end", () => {
+      if (!body) return resolve({});
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new HttpError(400, "Request body must be valid JSON."));
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
+function sanitizeState(input) {
+  const allowedKeys = ["resources", "reservations", "payments", "visitors", "people", "offices", "approvalTemplates", "systemSettings", "notifications", "activity"];
+  return Object.fromEntries(allowedKeys.map((key) => [key, Array.isArray(input[key]) ? input[key] : []]));
+}
+
+function normalizeState(input) {
+  const clean = sanitizeState(input);
+  clean.resources = clean.resources.map((resource) => ({
+    ...resource,
+    workflowTemplateId: resource.workflowTemplateId || "WF-BASIC"
+  }));
+  clean.reservations = clean.reservations.map((reservation) => {
+    if (reservation.approvalSteps?.length) return reservation;
+    const stepStatus = reservation.status === "Pending"
+      ? "Pending"
+      : reservation.status === "Rejected"
+        ? "Rejected"
+        : "Approved";
+    return {
+      ...reservation,
+      status: reservation.status === "Pending" ? "Under Owner Review" : reservation.status,
+      workflowTemplateId: reservation.workflowTemplateId || "WF-BASIC",
+      approvalSteps: [{
+        id: `${reservation.id}-OWNER`,
+        templateStepId: "OWNER",
+        name: "Resource Owner Review",
+        office: reservation.office,
+        sequence: 1,
+        condition: "always",
+        status: stepStatus,
+        decidedBy: stepStatus === "Pending" ? "" : "Legacy migration",
+        decidedAt: ""
+      }]
+    };
+  });
+  clean.notifications = clean.notifications.map((notification) => {
+    if (notification.office) return notification;
+    const message = String(notification.message || "");
+    const office = clean.offices.find((item) =>
+      message.includes(item.name) && /(routed to|needs review|verification|uploaded a receipt)/i.test(message)
+    );
+    return office ? { ...notification, office: office.name } : notification;
+  });
+  return clean;
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function todayIso() {
+  const date = new Date();
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function tomorrowIso() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function assertReservationLeadTime(reservation) {
+  if (!reservation?.date || reservation.date < todayIso()) {
+    throw new HttpError(400, "Reservation date cannot be in the past.");
+  }
+  if (reservation.date < tomorrowIso()) {
+    throw new HttpError(400, "Reservations must be submitted at least one day before the time of use.");
+  }
+}
+
+function toMinutes(value) {
+  const [hours, minutes] = String(value || "").split(":").map(Number);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function fromMinutes(value) {
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+function selectedDuration(start, end) {
+  const startMinutes = toMinutes(start);
+  const endMinutes = toMinutes(end);
+  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return DEFAULT_SLOT_MINUTES;
+  return Math.min(endMinutes - startMinutes, 12 * 60);
+}
+
+function addDaysIso(date, days) {
+  const value = date || tomorrowIso();
+  const next = new Date(`${value}T00:00:00`);
+  next.setDate(next.getDate() + days);
+  const offset = next.getTimezoneOffset() * 60_000;
+  return new Date(next.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function reservationConflicts(database, resourceId, date, start, end, excludeId = "") {
+  if (!resourceId || !date || !start || !end || start >= end) return [];
+  return database.reservations.filter((reservation) =>
+    reservation.id !== excludeId
+    && reservation.resourceId === resourceId
+    && reservation.date === date
+    && BLOCKING_RESERVATION_STATUSES.includes(reservation.status)
+    && start < reservation.end
+    && end > reservation.start
+  );
+}
+
+function publicConflicts(conflicts) {
+  return conflicts.map((item) => ({
+    id: item.id,
+    date: item.date,
+    start: item.start,
+    end: item.end,
+    status: item.status
+  }));
+}
+
+function reservationSlotOptions(database, resource, date, start, end) {
+  if (!resource || !date) return [];
+  const duration = selectedDuration(start, end);
+  const step = duration >= DEFAULT_SLOT_MINUTES ? DEFAULT_SLOT_MINUTES : 30;
+  const unavailableDay = resource.status !== "Available" || date < tomorrowIso();
+  const options = [];
+  for (let minute = BUSINESS_DAY_START; minute + duration <= BUSINESS_DAY_END; minute += step) {
+    const slotStart = fromMinutes(minute);
+    const slotEnd = fromMinutes(minute + duration);
+    const conflicts = unavailableDay ? [] : reservationConflicts(database, resource.id, date, slotStart, slotEnd);
+    options.push({
+      date,
+      start: slotStart,
+      end: slotEnd,
+      status: unavailableDay || conflicts.length ? "unavailable" : "available",
+      conflicts: publicConflicts(conflicts)
+    });
+  }
+  return options;
+}
+
+function availableAlternatives(database, resource, date, start, end, limit = 6) {
+  const startDate = date && date >= tomorrowIso() ? date : tomorrowIso();
+  const alternatives = [];
+  for (let day = 0; day < 10 && alternatives.length < limit; day += 1) {
+    const candidateDate = addDaysIso(startDate, day);
+    const daily = reservationSlotOptions(database, resource, candidateDate, start, end)
+      .filter((slot) => slot.status === "available");
+    alternatives.push(...daily.slice(0, limit - alternatives.length));
+  }
+  return alternatives;
+}
+
+function resourceAvailability(database, resourceId, date, start, end) {
+  const resource = database.resources.find((item) => item.id === resourceId);
+  const emptySlots = { slots: [], alternatives: [] };
+  if (!resource) return { status: "unavailable", message: "Select a resource first.", conflicts: [], ...emptySlots };
+  if (resource.status !== "Available") return { status: "unavailable", message: `${resource.name} is currently ${resource.status}.`, conflicts: [], ...emptySlots };
+  if (!date || !start || !end) return { status: "pending", message: "Choose a date, start time, and end time to check availability.", conflicts: [], ...emptySlots };
+  if (date < tomorrowIso()) return {
+    status: "unavailable",
+    message: "Reservations must be made at least one day before the time of use.",
+    conflicts: [],
+    slots: reservationSlotOptions(database, resource, tomorrowIso(), start, end),
+    alternatives: availableAlternatives(database, resource, tomorrowIso(), start, end)
+  };
+  if (start >= end) return {
+    status: "unavailable",
+    message: "End time must be later than start time.",
+    conflicts: [],
+    slots: reservationSlotOptions(database, resource, date, start, end),
+    alternatives: []
+  };
+  const conflicts = reservationConflicts(database, resource.id, date, start, end);
+  if (conflicts.length) return {
+    status: "conflict",
+    message: `${resource.name} has an overlapping request in that slot.`,
+    conflicts: publicConflicts(conflicts),
+    slots: reservationSlotOptions(database, resource, date, start, end),
+    alternatives: availableAlternatives(database, resource, date, start, end)
+  };
+  return {
+    status: "available",
+    message: `${resource.name} is available for the selected slot.`,
+    conflicts: [],
+    slots: reservationSlotOptions(database, resource, date, start, end),
+    alternatives: availableAlternatives(database, resource, date, start, end)
+  };
+}
+
+function verifyPassword(password, credential) {
+  if (!credential || typeof password !== "string") return false;
+  const actual = crypto.scryptSync(password, credential.salt, 64);
+  const expected = Buffer.from(credential.passwordHash, "hex");
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function publicUser(person) {
+  return {
+    name: person.name,
+    email: person.email,
+    office: person.office,
+    role: person.role,
+    status: person.status
+  };
+}
+
+function createSession(email) {
+  const token = crypto.randomBytes(32).toString("base64url");
+  sessions.set(token, { email, expiresAt: Date.now() + SESSION_TTL_MS });
+  return token;
+}
+
+function bearerToken(request) {
+  const match = String(request.headers.authorization || "").match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || "";
+}
+
+function authenticatedUser(request) {
+  const token = bearerToken(request);
+  const session = sessions.get(token);
+  if (!session || session.expiresAt <= Date.now()) {
+    if (token) sessions.delete(token);
+    throw new HttpError(401, "Please sign in to continue.");
+  }
+
+  const person = readDatabase().people.find((item) => normalizeEmail(item.email) === session.email);
+  if (!person || person.status !== "Active" || !ROLE_MUTATIONS[person.role]) {
+    sessions.delete(token);
+    throw new HttpError(403, "This Reservata account is not active or has no supported role.");
+  }
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return publicUser(person);
+}
+
+function same(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function changedRecords(before, after, key) {
+  const previous = new Map(before[key].map((item) => [item.id, item]));
+  const currentIds = new Set(after[key].map((item) => item.id));
+  if (before[key].some((item) => !currentIds.has(item.id))) {
+    throw new HttpError(403, `${key} records cannot be deleted through this workflow.`);
+  }
+  return after[key].filter((item) => !same(previous.get(item.id), item));
+}
+
+function assertActivityAppend(before, after, user) {
+  if (same(before.activity, after.activity)) return;
+  const addedCount = after.activity.length - before.activity.length;
+  if (addedCount < 1 || !same(after.activity.slice(addedCount), before.activity)) {
+    throw new HttpError(403, "Existing audit records cannot be changed.");
+  }
+  if (after.activity.slice(0, addedCount).some((item) => item.actor !== user.name)) {
+    throw new HttpError(403, "Audit records must identify the signed-in account.");
+  }
+}
+
+function assertScopedMutation(before, after, user, database) {
+  const allowed = new Set(ROLE_MUTATIONS[user.role]);
+  for (const key of Object.keys(after)) {
+    if (!allowed.has(key) && !same(before[key], after[key])) {
+      throw new HttpError(403, `${user.role} cannot modify ${key}.`);
+    }
+  }
+  if (user.role === "Super Admin") {
+    assertActivityAppend(before, after, user);
+    ["resources", "people", "offices", "approvalTemplates", "systemSettings"].forEach((key) => changedRecords(before, after, key));
+    const signedInBefore = before.people.find((item) => normalizeEmail(item.email) === normalizeEmail(user.email));
+    const signedInAfter = after.people.find((item) => normalizeEmail(item.email) === normalizeEmail(user.email));
+    if (!signedInAfter || signedInAfter.role !== signedInBefore?.role || signedInAfter.status !== signedInBefore?.status) {
+      throw new HttpError(403, "A Super Admin cannot change or deactivate their own signed-in account.");
+    }
+    if (after.people.some((item) => !ROLE_MUTATIONS[item.role] || !["Active", "Inactive"].includes(item.status))) {
+      throw new HttpError(400, "A user has an unsupported role or account status.");
+    }
+    return;
+  }
+
+  assertActivityAppend(before, after, user);
+  const changedReservations = changedRecords(before, after, "reservations");
+  const changedPayments = changedRecords(before, after, "payments");
+  const changedResources = changedRecords(before, after, "resources");
+  const changedVisitors = changedRecords(before, after, "visitors");
+  const changedNotifications = changedRecords(before, after, "notifications");
+  const reservationById = new Map(after.reservations.map((item) => [item.id, item]));
+  const previousPaymentIds = new Set(before.payments.map((item) => item.id));
+  const requesterNotificationTargets = new Set([user.name]);
+
+  function paymentOffice(payment) {
+    return payment.office || reservationById.get(payment.reservationId)?.office;
+  }
+
+  function isNewPaymentHandoff(payment) {
+    const reservation = reservationById.get(payment.reservationId);
+    return !previousPaymentIds.has(payment.id)
+      && reservation?.approvalSteps?.some((step) => step.office === user.office)
+      && reservation.status === "For Payment"
+      && paymentOffice(payment) === reservation.office
+      && payment.status === "Awaiting Receipt";
+  }
+
+  if (user.role === "Requester") {
+    const full = normalizeState(database);
+    for (const reservation of changedReservations) {
+      const existed = before.reservations.some((item) => item.id === reservation.id);
+      if (existed) {
+        const previous = before.reservations.find((item) => item.id === reservation.id);
+        const allowed = { ...previous, supportingDocuments: reservation.supportingDocuments };
+        if (reservation.requester !== user.name || !same(reservation, allowed)) {
+          throw new HttpError(403, "Requesters may only upload supporting documents to their own reservations.");
+        }
+        requesterNotificationTargets.add(reservation.office);
+        continue;
+      }
+      if (reservation.requester !== user.name || reservation.status !== "Under Owner Review") {
+        throw new HttpError(403, "Requesters may only submit new pending reservations for their own account.");
+      }
+      assertReservationLeadTime(reservation);
+      if (reservationConflicts(full, reservation.resourceId, reservation.date, reservation.start, reservation.end, reservation.id).length) {
+        throw new HttpError(409, "That resource already has an overlapping reservation request.");
+      }
+      requesterNotificationTargets.add(reservation.office);
+    }
+    if (changedPayments.some((payment) => reservationById.get(payment.reservationId)?.requester !== user.name)) {
+      throw new HttpError(403, "That payment does not belong to the signed-in requester.");
+    }
+  }
+
+  if (user.role === "Office Admin") {
+    if (changedReservations.some((item) => item.office !== user.office && !item.approvalSteps?.some((step) => step.office === user.office)) || changedResources.some((item) => item.office !== user.office)) {
+      throw new HttpError(403, "Office Administrators may only change records assigned to their office.");
+    }
+    if (changedPayments.some((item) => paymentOffice(item) !== user.office && !isNewPaymentHandoff(item))) {
+      throw new HttpError(403, "That payment is assigned to the resource-owning office.");
+    }
+  }
+
+  if (user.role === "OSG Requester") {
+    if (changedVisitors.some((item) => item.requester !== user.name || item.status !== "Pending")) {
+      throw new HttpError(403, "OSG Requesters may only submit pending visitor requests for their own account.");
+    }
+  }
+
+  if (user.role === "OSG Admin" && changedReservations.some((item) => !item.approvalSteps?.some((step) => step.office === "OSG"))) {
+    throw new HttpError(403, "OSG may only decide reservation approval steps assigned to OSG.");
+  }
+  if (user.role === "OSG Admin" && changedPayments.some((payment) => {
+    const reservation = reservationById.get(payment.reservationId);
+    const existed = before.payments.some((item) => item.id === payment.id);
+    return existed
+      || !reservation?.approvalSteps?.some((step) => step.office === "OSG")
+      || reservation.status !== "For Payment"
+      || paymentOffice(payment) !== reservation.office
+      || payment.status !== "Awaiting Receipt";
+  })) {
+    throw new HttpError(403, "OSG may only trigger a new awaiting-receipt record after its final required approval.");
+  }
+
+  if (!["OSG Admin", "OSG Requester"].includes(user.role) && changedVisitors.length) {
+    throw new HttpError(403, `${user.role} cannot modify visitor records.`);
+  }
+  if (user.role !== "Office Admin" && changedResources.length) {
+    throw new HttpError(403, `${user.role} cannot modify resources.`);
+  }
+  if (!["Requester", "Office Admin", "OSG Admin"].includes(user.role) && (changedReservations.length || changedPayments.length)) {
+    throw new HttpError(403, `${user.role} cannot modify reservation or payment records.`);
+  }
+  if (user.role === "Requester" && changedNotifications.some((item) => !requesterNotificationTargets.has(item.user))) {
+    throw new HttpError(403, "Users may only update their own notifications or the office assigned to a new reservation.");
+  }
+  if (user.role === "OSG Requester" && changedNotifications.some((item) => item.user !== user.name)) {
+    throw new HttpError(403, "Users may only update their own notifications.");
+  }
+}
+
+function scopePredicates(database, user) {
+  const scopedReservations = database.reservations.filter((item) => user.role === "Requester"
+    ? item.requester === user.name
+    : item.office === user.office || item.approvalSteps?.some((step) => step.office === user.office));
+  const reservationIds = new Set(
+    scopedReservations
+      .map((item) => item.id)
+  );
+  function paymentOffice(payment) {
+    return payment.office || database.reservations.find((item) => item.id === payment.reservationId)?.office;
+  }
+
+  const officeTargets = new Set([
+    ...database.resources.filter((item) => item.office === user.office).map((item) => item.name),
+    ...scopedReservations.map((item) => item.resourceName),
+    ...database.payments.filter((item) => paymentOffice(item) === user.office).map((item) => item.reservationId)
+  ]);
+  const visitorTargets = new Set(database.visitors.map((item) => item.visitor));
+
+  function notificationVisible(item) {
+    if (["Requester", "OSG Requester"].includes(user.role)) return item.user === user.name;
+    return item.user === user.name || item.office === user.office || item.user === user.office;
+  }
+
+  return {
+    resources: (item) => user.role === "Requester"
+      ? item.type !== "Visitor Service" && item.status !== "Archived"
+      : user.role === "Office Admin" && item.office === user.office,
+    reservations: (item) => user.role === "Requester"
+      ? item.requester === user.name
+      : user.role === "Office Admin"
+        ? item.office === user.office || item.approvalSteps?.some((step) => step.office === user.office)
+        : user.role === "OSG Admin" && item.approvalSteps?.some((step) => step.office === "OSG"),
+    payments: (item) => user.role === "Requester"
+      ? reservationIds.has(item.reservationId)
+      : user.role === "Office Admin"
+        ? paymentOffice(item) === user.office
+        : user.role === "OSG Admin" && reservationIds.has(item.reservationId),
+    visitors: (item) => user.role === "OSG Admin" || (user.role === "OSG Requester" && item.requester === user.name),
+    people: (item) => normalizeEmail(item.email) === normalizeEmail(user.email),
+    offices: (item) => user.role === "Office Admin" && item.status === "Active",
+    approvalTemplates: (item) => ["Requester", "Office Admin"].includes(user.role) && item.status === "Active",
+    systemSettings: () => false,
+    notifications: notificationVisible,
+    activity: (item) => {
+      if (["Requester", "OSG Requester"].includes(user.role)) return item.actor === user.name;
+      if (user.role === "Office Admin") return item.actor === user.name || officeTargets.has(item.target);
+      if (user.role === "OSG Admin") return item.actor === user.name || visitorTargets.has(item.target);
+      return false;
+    }
+  };
+}
+
+function scopedState(database, user) {
+  const clean = normalizeState(database);
+  if (user.role === "Super Admin") return clean;
+  const predicates = scopePredicates(clean, user);
+  return Object.fromEntries(Object.keys(clean).map((key) => [key, clean[key].filter(predicates[key])]));
+}
+
+function mergeScopedState(database, submitted, user) {
+  const full = normalizeState(database);
+  if (user.role === "Super Admin") return submitted;
+  const predicates = scopePredicates(full, user);
+  const merged = { ...full };
+  for (const key of ROLE_MUTATIONS[user.role]) {
+    merged[key] = [
+      ...full[key].filter((item) => !predicates[key](item)),
+      ...submitted[key]
+    ];
+  }
+  return merged;
+}
+
+async function handleAuth(request, response, pathname) {
+  if (pathname === "/api/auth/login" && request.method === "POST") {
+    const body = await readBody(request);
+    const email = normalizeEmail(body.email);
+    const credential = readAccounts().find((item) => normalizeEmail(item.email) === email);
+    const person = readDatabase().people.find((item) => normalizeEmail(item.email) === email);
+    if (!person || person.status !== "Active" || !verifyPassword(body.password, credential)) {
+      throw new HttpError(401, "The email or password is incorrect.");
+    }
+    const token = createSession(email);
+    sendJson(response, 200, { token, user: publicUser(person), expiresIn: SESSION_TTL_MS / 1000 });
+    return true;
+  }
+
+  if (pathname === "/api/auth/session" && request.method === "GET") {
+    sendJson(response, 200, { user: authenticatedUser(request) });
+    return true;
+  }
+
+  if (pathname === "/api/auth/logout" && request.method === "POST") {
+    sessions.delete(bearerToken(request));
+    sendJson(response, 200, { ok: true });
+    return true;
+  }
+  return false;
+}
+
+async function handleApi(request, response, url) {
+  const pathname = url.pathname;
+  if (pathname === "/api/health" && request.method === "GET") {
+    sendJson(response, 200, { ok: true, service: "Reservata local API" });
+    return;
+  }
+  if (await handleAuth(request, response, pathname)) return;
+
+  const user = authenticatedUser(request);
+  if (pathname === "/api/state" && request.method === "GET") {
+    sendJson(response, 200, scopedState(readDatabase(), user));
+    return;
+  }
+
+  const availabilityMatch = pathname.match(/^\/api\/resources\/([^/]+)\/availability$/);
+  if (availabilityMatch && request.method === "GET") {
+    const database = normalizeState(readDatabase());
+    const resourceId = decodeURIComponent(availabilityMatch[1]);
+    const resource = database.resources.find((item) => item.id === resourceId);
+    const visible = resource && (
+      user.role === "Super Admin"
+      || (user.role === "Requester" && resource.status !== "Archived" && resource.type !== "Visitor Service")
+      || (user.role === "Office Admin" && resource.office === user.office)
+    );
+    if (!visible) throw new HttpError(404, "Resource not found.");
+    sendJson(response, 200, resourceAvailability(
+      database,
+      resourceId,
+      url.searchParams.get("date") || "",
+      url.searchParams.get("start") || "",
+      url.searchParams.get("end") || ""
+    ));
+    return;
+  }
+
+  if (pathname === "/api/state" && request.method === "PUT") {
+    const database = readDatabase();
+    const before = scopedState(database, user);
+    const after = sanitizeState(await readBody(request));
+    assertScopedMutation(before, after, user, database);
+    writeDatabase(mergeScopedState(database, after, user));
+    sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
+    return;
+  }
+
+  if (pathname === "/api/notifications/read" && request.method === "PATCH") {
+    const body = await readBody(request);
+    const database = normalizeState(readDatabase());
+    const visibleIds = new Set(scopedState(database, user).notifications.map((item) => item.id));
+    const requestedId = body.id ? String(body.id) : "";
+    if (requestedId && !visibleIds.has(requestedId)) {
+      throw new HttpError(404, "Notification not found.");
+    }
+    const targetIds = requestedId ? new Set([requestedId]) : visibleIds;
+    database.notifications = database.notifications.map((item) =>
+      targetIds.has(item.id) ? { ...item, unread: false } : item
+    );
+    writeDatabase(database);
+    sendJson(response, 200, scopedState(database, user));
+    return;
+  }
+
+  if (pathname === "/api/reset" && request.method === "POST") {
+    if (user.role !== "Super Admin") throw new HttpError(403, "Only a Super Admin can reset demonstration data.");
+    const defaultPath = path.join(ROOT, "data", "db.default.json");
+    writeDatabase(JSON.parse(fs.readFileSync(defaultPath, "utf8")));
+    sendJson(response, 200, { ok: true, resetAt: new Date().toISOString() });
+    return;
+  }
+
+  throw new HttpError(404, "API route not found.");
+}
+
+function serveStatic(response, pathname) {
+  if (/^\/(data|aws|docs)(\/|$)/i.test(pathname)) {
+    sendText(response, 404, "Not found");
+    return;
+  }
+  const safePath = pathname === "/" ? "/index.html" : pathname;
+  const filePath = path.normalize(path.join(STATIC_ROOT, safePath));
+  if (!filePath.startsWith(STATIC_ROOT)) {
+    sendText(response, 403, "Forbidden");
+    return;
+  }
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    sendText(response, 404, "Not found");
+    return;
+  }
+  const ext = path.extname(filePath);
+  response.writeHead(200, {
+    "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff"
+  });
+  fs.createReadStream(filePath).pipe(response);
+}
+
+function createServer() {
+  return http.createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url, `http://${request.headers.host}`);
+      if (url.pathname.startsWith("/api/")) {
+        await handleApi(request, response, url);
+        return;
+      }
+      serveStatic(response, decodeURIComponent(url.pathname));
+    } catch (error) {
+      sendJson(response, error.status || 500, { error: error.status ? error.message : "Server error." });
+    }
+  });
+}
+
+if (require.main === module) {
+  createServer().listen(PORT, HOST, () => {
+    console.log(`Reservata local API running at http://${HOST}:${PORT}/api/health`);
+  });
+}
+
+module.exports = { createServer, scopedState, verifyPassword };

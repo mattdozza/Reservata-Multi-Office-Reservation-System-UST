@@ -1,0 +1,109 @@
+import { STORAGE_KEYS } from "./config.js";
+import { DEFAULT_DATA } from "./defaultData.js";
+import { clone } from "./utils.js";
+
+const LOCAL_TOKEN_KEY = "reservata.localAccessToken.v1";
+
+function localToken() {
+  return sessionStorage.getItem(LOCAL_TOKEN_KEY) || "";
+}
+
+function setLocalToken(token) {
+  if (token) sessionStorage.setItem(LOCAL_TOKEN_KEY, token);
+  else sessionStorage.removeItem(LOCAL_TOKEN_KEY);
+}
+
+async function parseResponse(response) {
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "The local RESERVATA service could not complete the request.");
+  return payload;
+}
+
+async function authenticatedFetch(path, options = {}) {
+  const token = localToken();
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    cache: "no-store"
+  });
+  return response;
+}
+
+export async function loginLocalAccount(email, password) {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  const result = await parseResponse(response);
+  setLocalToken(result.token);
+  return result.user;
+}
+
+export async function restoreLocalAccount() {
+  if (!localToken()) return null;
+  const response = await authenticatedFetch("/api/auth/session");
+  if (response.status === 401 || response.status === 403) {
+    setLocalToken(null);
+    return null;
+  }
+  return (await parseResponse(response)).user;
+}
+
+export async function logoutLocalAccount() {
+  if (localToken()) {
+    await authenticatedFetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+  }
+  setLocalToken(null);
+}
+
+export async function loadDatabase() {
+  const response = await authenticatedFetch("/api/state");
+  const data = await parseResponse(response);
+  return { data, apiAvailable: true };
+}
+
+export async function loadResourceAvailability(resourceId, date, start, end) {
+  const params = new URLSearchParams({ date, start, end });
+  const response = await authenticatedFetch(`/api/resources/${encodeURIComponent(resourceId)}/availability?${params}`);
+  return parseResponse(response);
+}
+
+export async function saveDatabase(data, apiAvailable) {
+  localStorage.setItem(STORAGE_KEYS.offlineData, JSON.stringify(data));
+  if (!apiAvailable) return false;
+  const response = await authenticatedFetch("/api/state", {
+    method: "PUT",
+    body: JSON.stringify(data)
+  });
+  await parseResponse(response);
+  return true;
+}
+
+export async function markLocalNotificationsRead(id = null) {
+  const response = await authenticatedFetch("/api/notifications/read", {
+    method: "PATCH",
+    body: JSON.stringify(id ? { id } : {})
+  });
+  return parseResponse(response);
+}
+
+export async function resetDatabase(apiAvailable) {
+  localStorage.removeItem(STORAGE_KEYS.offlineData);
+  if (!apiAvailable) return clone(DEFAULT_DATA);
+  await parseResponse(await authenticatedFetch("/api/reset", { method: "POST" }));
+  return parseResponse(await authenticatedFetch("/api/state"));
+}
+
+export function loadSession() {
+  const stored = localStorage.getItem(STORAGE_KEYS.session);
+  return stored ? JSON.parse(stored) : { activeRole: null, activeView: "dashboard" };
+}
+
+export function saveSession(session) {
+  localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
+}

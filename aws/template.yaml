@@ -1,0 +1,399 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Reservata serverless backend - API Gateway, Lambda, DynamoDB, and receipt storage
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+  AllowedOrigin:
+    Type: String
+    Default: http://127.0.0.1:5178
+  UniversitySsoIssuer:
+    Type: String
+    Description: OIDC issuer URL supplied by the university identity provider
+  UniversitySsoAudience:
+    Type: String
+    Description: OAuth/OIDC client audience supplied by the university identity provider
+
+Conditions:
+  IsProduction: !Equals [!Ref EnvironmentName, prod]
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 15
+    Tracing: Active
+    Environment:
+      Variables:
+        RESOURCES_TABLE: !Ref ResourcesTable
+        RESERVATIONS_TABLE: !Ref ReservationsTable
+        RESERVATION_LOCKS_TABLE: !Ref ReservationLocksTable
+        PAYMENTS_TABLE: !Ref PaymentsTable
+        VISITORS_TABLE: !Ref VisitorsTable
+        USERS_TABLE: !Ref UsersTable
+        OFFICES_TABLE: !Ref OfficesTable
+        APPROVAL_WORKFLOWS_TABLE: !Ref ApprovalWorkflowsTable
+        NOTIFICATIONS_TABLE: !Ref NotificationsTable
+        ACTIVITY_TABLE: !Ref ActivityTable
+        RECEIPTS_BUCKET: !Ref ReceiptsBucket
+    Tags:
+      Application: Reservata
+      Environment: !Ref EnvironmentName
+
+Resources:
+  ReservataApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref EnvironmentName
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+        AllowMethods:
+          - GET
+          - POST
+          - PATCH
+          - OPTIONS
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: UniversityJwt
+        Authorizers:
+          UniversityJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Ref UniversitySsoIssuer
+              audience:
+                - !Ref UniversitySsoAudience
+      Tags:
+        Application: Reservata
+        Environment: !Ref EnvironmentName
+
+  BootstrapFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src/handlers/bootstrap.handler
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref ResourcesTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ReservationsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref PaymentsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref VisitorsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBReadPolicy: { TableName: !Ref OfficesTable }
+        - DynamoDBReadPolicy: { TableName: !Ref NotificationsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ActivityTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+      Events:
+        Bootstrap:
+          Type: HttpApi
+          Properties: { ApiId: !Ref ReservataApi, Path: /bootstrap, Method: GET }
+
+  ResourceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src/handlers/resources.handler
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref ResourcesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+      Events:
+        ListResources: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resources, Method: GET } }
+        CreateResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resources, Method: POST } }
+        EditResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}", Method: PATCH } }
+        UpdateResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}/status", Method: PATCH } }
+
+  ReservationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src/handlers/reservations.handler
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ResourcesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationLocksTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref PaymentsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+        - S3WritePolicy: { BucketName: !Ref ReceiptsBucket }
+      Events:
+        ListReservations: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /reservations, Method: GET } }
+        CreateReservation: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /reservations, Method: POST } }
+        DecideReservation: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/decision", Method: PATCH } }
+        ResourceAvailability: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}/availability", Method: GET } }
+        DocumentUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/document-upload", Method: POST } }
+
+  PaymentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src/handlers/payments.handler
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref PaymentsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationLocksTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
+        - S3WritePolicy: { BucketName: !Ref ReceiptsBucket }
+      Events:
+        ListPayments: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /payments, Method: GET } }
+        ReceiptUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-upload", Method: POST } }
+        VerifyPayment: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/verification", Method: PATCH } }
+
+  VisitorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src/handlers/visitors.handler
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref VisitorsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
+      Events:
+        ListVisitors: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /visitors, Method: GET } }
+        CreateVisitor: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /visitors, Method: POST } }
+        DecideVisitor: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/visitors/{id}/decision", Method: PATCH } }
+        CheckInVisitor: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/visitors/{id}/check-in", Method: PATCH } }
+        AllocateParking: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/visitors/{id}/parking", Method: PATCH } }
+
+  AdminFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src/handlers/admin.handler
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ResourcesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref OfficesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
+      Events:
+        ListUsers: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /users, Method: GET } }
+        CreateUser: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /users, Method: POST } }
+        UpdateUserRole: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/users/{email}/role", Method: PATCH } }
+        UpdateUserAccess: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/users/{email}/access", Method: PATCH } }
+        ListOffices: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /offices, Method: GET } }
+        CreateOffice: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /offices, Method: POST } }
+        UpdateOffice: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/offices/{id}", Method: PATCH } }
+        ListWorkflows: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /workflows, Method: GET } }
+        CreateWorkflow: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /workflows, Method: POST } }
+        UpdateWorkflow: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/workflows/{id}", Method: PATCH } }
+        ListNotifications: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /notifications, Method: GET } }
+        ReadNotifications: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /notifications/read, Method: PATCH } }
+        ListActivity: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /activity, Method: GET } }
+
+  ResourcesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: office-index
+          KeySchema: [{ AttributeName: office, KeyType: HASH }]
+          Projection: { ProjectionType: ALL }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ReservationsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+        - { AttributeName: requesterEmail, AttributeType: S }
+        - { AttributeName: resourceDate, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+        - { IndexName: requester-index, KeySchema: [{ AttributeName: requesterEmail, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+        - { IndexName: resource-date-index, KeySchema: [{ AttributeName: resourceDate, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  PaymentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+        - { AttributeName: requesterEmail, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+        - { IndexName: requester-index, KeySchema: [{ AttributeName: requesterEmail, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ReservationLocksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: slotKey, AttributeType: S }]
+      KeySchema: [{ AttributeName: slotKey, KeyType: HASH }]
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification: { SSEEnabled: true }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  VisitorsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: requesterEmail, AttributeType: S }
+        - { AttributeName: status, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: requester-index, KeySchema: [{ AttributeName: requesterEmail, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+        - { IndexName: status-index, KeySchema: [{ AttributeName: status, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: email, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+      KeySchema: [{ AttributeName: email, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  OfficesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: id, AttributeType: S }]
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  NotificationsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: userEmail, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: user-index, KeySchema: [{ AttributeName: userEmail, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ApprovalWorkflowsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: id, AttributeType: S }]
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ActivityTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ReceiptsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [PUT]
+            AllowedOrigins: [!Ref AllowedOrigin]
+            MaxAge: 600
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveReceipts
+            Status: Enabled
+            Transitions:
+              - StorageClass: INTELLIGENT_TIERING
+                TransitionInDays: 30
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+Outputs:
+  ApiBaseUrl:
+    Value: !Sub https://${ReservataApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${EnvironmentName}
+  ReceiptsBucketName:
+    Value: !Ref ReceiptsBucket
+  ResourcesTableName: { Value: !Ref ResourcesTable }
+  ReservationsTableName: { Value: !Ref ReservationsTable }
+  ReservationLocksTableName: { Value: !Ref ReservationLocksTable }
+  PaymentsTableName: { Value: !Ref PaymentsTable }
+  VisitorsTableName: { Value: !Ref VisitorsTable }
+  UsersTableName: { Value: !Ref UsersTable }
+  OfficesTableName: { Value: !Ref OfficesTable }
+  ApprovalWorkflowsTableName: { Value: !Ref ApprovalWorkflowsTable }
+  NotificationsTableName: { Value: !Ref NotificationsTable }
+  ActivityTableName: { Value: !Ref ActivityTable }
