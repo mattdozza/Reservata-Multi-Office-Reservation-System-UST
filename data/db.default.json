@@ -95,7 +95,7 @@
   "reservations": [
     {
       "id": "REQ-2026-001",
-      "requester": "Maria Jua",
+      "requester": "Student Body Requester",
       "resourceId": "R-001",
       "resourceName": "Robot 01",
       "office": "EdTech",
@@ -142,7 +142,7 @@
     },
     {
       "id": "REQ-2026-004",
-      "requester": "Paolo Reyes",
+      "requester": "CICS Visitor Requester",
       "resourceId": "R-007",
       "resourceName": "Projector Set A",
       "office": "Simbahayan",
@@ -177,7 +177,7 @@
   "visitors": [
     {
       "id": "VIS-001",
-      "requester": "Paolo Reyes",
+      "requester": "CICS Visitor Requester",
       "visitor": "Dr. Elena Cruz",
       "organization": "Department of Education",
       "purpose": "University partnership meeting",
@@ -191,7 +191,7 @@
     },
     {
       "id": "VIS-002",
-      "requester": "Paolo Reyes",
+      "requester": "CICS Visitor Requester",
       "visitor": "Manila Science High School",
       "organization": "MSHS",
       "purpose": "Campus familiarization visit",
@@ -220,49 +220,49 @@
   ],
   "people": [
     {
-      "name": "Maria Jua",
-      "email": "maria.jua@ust.edu.ph",
+      "name": "Student Body Requester",
+      "email": "student.body.requester@ust.edu.ph",
       "office": "Student Body",
       "role": "Requester",
       "status": "Active"
     },
     {
-      "name": "Maria Santos",
-      "email": "maria.santos@ust.edu.ph",
+      "name": "Simbahayan Office Admin",
+      "email": "simbahayan.admin@ust.edu.ph",
       "office": "Simbahayan",
       "role": "Office Admin",
       "status": "Active"
     },
     {
-      "name": "Andrea Reyes",
-      "email": "andrea.reyes@ust.edu.ph",
+      "name": "OSG Admin",
+      "email": "osg.admin@ust.edu.ph",
       "office": "OSG",
       "role": "OSG Admin",
       "status": "Active"
     },
     {
-      "name": "Sandra Alma",
-      "email": "sandra.alma@ust.edu.ph",
+      "name": "All Offices Super Admin",
+      "email": "all.offices.admin@ust.edu.ph",
       "office": "All Offices",
       "role": "Super Admin",
       "status": "Active"
     },
     {
-      "name": "Paolo Reyes",
-      "email": "paolo.reyes@ust.edu.ph",
+      "name": "CICS Visitor Requester",
+      "email": "cics.visitor.requester@ust.edu.ph",
       "office": "CICS",
       "role": "OSG Requester",
       "status": "Active"
     },
     {
-      "name": "Felix Mendoza",
+      "name": "Facilities Office Admin",
       "email": "facilities.admin@ust.edu.ph",
       "office": "Facilities Management",
       "role": "Office Admin",
       "status": "Active"
     },
     {
-      "name": "EdTech Admin",
+      "name": "EdTech Office Admin",
       "email": "edtech.admin@ust.edu.ph",
       "office": "EdTech",
       "role": "Office Admin",
@@ -333,7 +333,7 @@
   "notifications": [
     {
       "id": "N-001",
-      "user": "Maria Jua",
+      "user": "Student Body Requester",
       "message": "Robot 01 request is pending EdTech review.",
       "unread": true
     },
@@ -347,7 +347,7 @@
   "activity": [
     {
       "action": "Reservation submitted",
-      "actor": "Maria Jua",
+      "actor": "Student Body Requester",
       "target": "Robot 01",
       "time": "Today 09:10"
     },
@@ -359,7 +359,7 @@
     },
     {
       "action": "Visitor request approved",
-      "actor": "Andrea Reyes",
+      "actor": "OSG Admin",
       "target": "Manila Science High School",
       "time": "Yesterday 16:18"
     }

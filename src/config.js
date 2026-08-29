@@ -13,47 +13,47 @@ export const ROLE_IDS = {
 
 export const USERS = {
   requester: {
-    name: "Maria Jua",
+    name: "Student Body Requester",
     initials: "MJ",
     roleLabel: "Requester",
     office: "Student Body",
-    email: "maria.jua@ust.edu.ph",
+    email: "student.body.requester@ust.edu.ph",
     portal: "Requester Portal",
     home: "dashboard"
   },
   officeAdmin: {
-    name: "Maria Santos",
+    name: "Simbahayan Office Admin",
     initials: "MS",
     roleLabel: "Office Admin",
     office: "Simbahayan Office",
-    email: "maria.santos@ust.edu.ph",
+    email: "simbahayan.admin@ust.edu.ph",
     portal: "Office Admin Portal",
     home: "dashboard"
   },
   superAdmin: {
-    name: "Sandra Alma",
+    name: "All Offices Super Admin",
     initials: "SA",
     roleLabel: "Super Admin",
     office: "All Offices",
-    email: "sandra.alma@ust.edu.ph",
+    email: "all.offices.admin@ust.edu.ph",
     portal: "Super Admin",
     home: "dashboard"
   },
   osgAdmin: {
-    name: "Andrea Reyes",
+    name: "OSG Admin",
     initials: "AR",
     roleLabel: "OSG Admin",
     office: "Office of the Secretary General",
-    email: "andrea.reyes@ust.edu.ph",
+    email: "osg.admin@ust.edu.ph",
     portal: "OSG Admin Portal",
     home: "dashboard"
   },
   osgRequester: {
-    name: "Paolo Reyes",
+    name: "CICS Visitor Requester",
     initials: "PR",
     roleLabel: "OSG Requester",
     office: "CICS",
-    email: "paolo.reyes@ust.edu.ph",
+    email: "cics.visitor.requester@ust.edu.ph",
     portal: "OSG Requester Portal",
     home: "dashboard"
   }

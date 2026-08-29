@@ -6,11 +6,11 @@ const test = require("node:test");
 const { createServer } = require("../server.js");
 
 const ACCOUNTS = [
-  ["maria.jua@ust.edu.ph", "Requester2026!", "Requester"],
-  ["maria.santos@ust.edu.ph", "OfficeAdmin2026!", "Office Admin"],
-  ["sandra.alma@ust.edu.ph", "SuperAdmin2026!", "Super Admin"],
-  ["andrea.reyes@ust.edu.ph", "OsgAdmin2026!", "OSG Admin"],
-  ["paolo.reyes@ust.edu.ph", "Visitor2026!", "OSG Requester"],
+  ["student.body.requester@ust.edu.ph", "Requester2026!", "Requester"],
+  ["simbahayan.admin@ust.edu.ph", "OfficeAdmin2026!", "Office Admin"],
+  ["all.offices.admin@ust.edu.ph", "SuperAdmin2026!", "Super Admin"],
+  ["osg.admin@ust.edu.ph", "OsgAdmin2026!", "OSG Admin"],
+  ["cics.visitor.requester@ust.edu.ph", "Visitor2026!", "OSG Requester"],
   ["facilities.admin@ust.edu.ph", "Facilities2026!", "Office Admin"]
 ];
 
@@ -128,7 +128,7 @@ test("supporting office can approve final step and create owner payment handoff"
     assert.ok(reservation);
     const step = reservation.approvalSteps.find((item) => item.office === "Facilities Management" && item.status === "Pending");
 
-    decideApprovalStep(reservation, step.id, true, "Felix Mendoza", "Just now");
+    decideApprovalStep(reservation, step.id, true, "Facilities Office Admin", "Just now");
     assert.equal(reservation.status, "For Payment");
     reservation.paymentId = "PAY-LOCAL-HANDOFF";
     state.payments.unshift({
@@ -141,7 +141,7 @@ test("supporting office can approve final step and create owner payment handoff"
       status: "Awaiting Receipt"
     });
     state.notifications.unshift({ id: "N-LOCAL-HANDOFF", user: reservation.requester, message: "Payment handoff created.", unread: true });
-    state.activity.unshift({ action: "Approval step approved", actor: "Felix Mendoza", target: `${reservation.resourceName}: ${step.name}`, time: "Just now" });
+    state.activity.unshift({ action: "Approval step approved", actor: "Facilities Office Admin", target: `${reservation.resourceName}: ${step.name}`, time: "Just now" });
 
     const save = await fetch(`${baseUrl}/api/state`, {
       method: "PUT",
@@ -192,7 +192,7 @@ test("local API blocks reservations against hidden pending conflicts and reports
     const login = await fetch(`${baseUrl}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "maria.jua@ust.edu.ph", password: "Requester2026!" })
+      body: JSON.stringify({ email: "student.body.requester@ust.edu.ph", password: "Requester2026!" })
     });
     assert.equal(login.status, 200);
     const { token } = await login.json();
@@ -214,7 +214,7 @@ test("local API blocks reservations against hidden pending conflicts and reports
 
     state.reservations.unshift({
       id: "REQ-LOCAL-CONFLICT",
-      requester: "Maria Jua",
+      requester: "Student Body Requester",
       resourceId: "R-007",
       resourceName: "Projector Set A",
       office: "Simbahayan",
@@ -230,7 +230,7 @@ test("local API blocks reservations against hidden pending conflicts and reports
       workflowTemplateId: "WF-BASIC",
       approvalSteps: [{ id: "REQ-LOCAL-CONFLICT-OWNER", office: "Simbahayan", status: "Pending", sequence: 1 }]
     });
-    state.activity.unshift({ id: "ACT-LOCAL-CONFLICT", action: "Reservation submitted", actor: "Maria Jua", target: "Projector Set A", time: "Just now" });
+    state.activity.unshift({ id: "ACT-LOCAL-CONFLICT", action: "Reservation submitted", actor: "Student Body Requester", target: "Projector Set A", time: "Just now" });
 
     const save = await fetch(`${baseUrl}/api/state`, {
       method: "PUT",
@@ -250,8 +250,8 @@ test("super admin can mark visible notifications read through the local API", as
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   database.notifications.unshift(
-    { id: "N-SUPER-READ-1", user: "Maria Jua", message: "Requester alert.", unread: true, type: "System" },
-    { id: "N-SUPER-READ-2", user: "Felix Mendoza", message: "Office alert.", unread: true, type: "System" }
+    { id: "N-SUPER-READ-1", user: "Student Body Requester", message: "Requester alert.", unread: true, type: "System" },
+    { id: "N-SUPER-READ-2", user: "Facilities Office Admin", message: "Office alert.", unread: true, type: "System" }
   );
   fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
 
@@ -265,7 +265,7 @@ test("super admin can mark visible notifications read through the local API", as
     const login = await fetch(`${baseUrl}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "sandra.alma@ust.edu.ph", password: "SuperAdmin2026!" })
+      body: JSON.stringify({ email: "all.offices.admin@ust.edu.ph", password: "SuperAdmin2026!" })
     });
     assert.equal(login.status, 200);
     const { token } = await login.json();
@@ -302,7 +302,7 @@ test("office admins can mark office notifications read without accessing private
   const database = JSON.parse(originalDatabase);
   database.notifications.unshift(
     { id: "N-OFFICE-READ", user: "Simbahayan", office: "Simbahayan", message: "Multipurpose Hall receipt needs verification.", unread: true, type: "Payment" },
-    { id: "N-REQUESTER-PRIVATE", user: "Maria Jua", message: "Private requester notification.", unread: true, type: "Reservation" }
+    { id: "N-REQUESTER-PRIVATE", user: "Student Body Requester", message: "Private requester notification.", unread: true, type: "Reservation" }
   );
   fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
 
@@ -316,7 +316,7 @@ test("office admins can mark office notifications read without accessing private
     const login = await fetch(`${baseUrl}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "maria.santos@ust.edu.ph", password: "OfficeAdmin2026!" })
+      body: JSON.stringify({ email: "simbahayan.admin@ust.edu.ph", password: "OfficeAdmin2026!" })
     });
     assert.equal(login.status, 200);
     const { token } = await login.json();

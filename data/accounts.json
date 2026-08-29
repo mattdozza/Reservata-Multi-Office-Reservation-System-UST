@@ -1,26 +1,26 @@
 [
   {
-    "email": "maria.jua@ust.edu.ph",
+    "email": "student.body.requester@ust.edu.ph",
     "salt": "59425fd97d9d654db9acabf702b5082d",
     "passwordHash": "d00dfc3ddf444e8b486c1a9377821092a1d990e164c73aa6396266d159e3e72d0ee806780d89d14546415cb2c05e0774abccecffe5ccff5ce4ea89c0cbe8cc14"
   },
   {
-    "email": "maria.santos@ust.edu.ph",
+    "email": "simbahayan.admin@ust.edu.ph",
     "salt": "5396d49823efb94b5edae52eabb5f8bf",
     "passwordHash": "4befe00c4a93a2633a954a6814edf066a1d22e52c120072b52b594e11ea28829e9bd64dfe9f3af02cee195906810c226bf5e718efb14ac724d33b4d87adfa4d9"
   },
   {
-    "email": "sandra.alma@ust.edu.ph",
+    "email": "all.offices.admin@ust.edu.ph",
     "salt": "749a1bd006dbd972cf16a671ce4550dd",
     "passwordHash": "a3f8e2fd9924582466136c9b92d5e11d9ebad70fa8f558e9566b177dfaada986f3e90c29b5165c39cae1bb3b005ad05c79c8eb960246169afb4f580728baa668"
   },
   {
-    "email": "andrea.reyes@ust.edu.ph",
+    "email": "osg.admin@ust.edu.ph",
     "salt": "c8771d3ae8b6f0607c302a8781fdebe1",
     "passwordHash": "9b9bfeceb315b099d30d6adfeaf6a9c59b5a6c656dfe0f5979592b07ee04fbe4f7c837d5cc4f464bbc35980f5cff33475eb6840a323b7d98a04d98caee60a1ff"
   },
   {
-    "email": "paolo.reyes@ust.edu.ph",
+    "email": "cics.visitor.requester@ust.edu.ph",
     "salt": "c05748e4a93fc8bc21a902bcde7826f3",
     "passwordHash": "421060f093632e1cc6838b1619aea067c138eb1d3813026cc43e9010a00cc8972b40241b50566017a038d005a420551e0967a8751bf6976e3c1c78f054200aac"
   },

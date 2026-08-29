@@ -77,7 +77,7 @@ test("office payment queue is scoped to the payment owner office", async () => {
     reservations: [
       {
         id: "REQ-1",
-        requester: "Maria Jua",
+        requester: "Student Body Requester",
         resourceName: "Main Chapel",
         office: "Simbahayan",
         status: "For Payment",
@@ -85,7 +85,7 @@ test("office payment queue is scoped to the payment owner office", async () => {
       },
       {
         id: "REQ-2",
-        requester: "Maria Jua",
+        requester: "Student Body Requester",
         resourceName: "Sound System",
         office: "Facilities Management",
         status: "For Payment",
@@ -120,10 +120,10 @@ test("requesters must reserve at least one day before use", async () => {
   const store = new ReservataStore();
   store.apiAvailable = false;
   store.localUser = {
-    name: "Maria Jua",
+    name: "Student Body Requester",
     role: "Requester",
     office: "Student Body",
-    email: "maria.jua@ust.edu.ph"
+    email: "student.body.requester@ust.edu.ph"
   };
   store.applyAuthenticatedUser(store.localUser);
   store.setData({
@@ -156,10 +156,10 @@ test("reservation availability blocks pending overlaps and suggests alternatives
   const store = new ReservataStore();
   store.apiAvailable = false;
   store.localUser = {
-    name: "Maria Jua",
+    name: "Student Body Requester",
     role: "Requester",
     office: "Student Body",
-    email: "maria.jua@ust.edu.ph"
+    email: "student.body.requester@ust.edu.ph"
   };
   store.applyAuthenticatedUser(store.localUser);
   store.setData({
@@ -196,16 +196,16 @@ test("requesters can attach supporting documents to their reservations", async (
   const store = new ReservataStore();
   store.apiAvailable = false;
   store.localUser = {
-    name: "Maria Jua",
+    name: "Student Body Requester",
     role: "Requester",
     office: "Student Body",
-    email: "maria.jua@ust.edu.ph"
+    email: "student.body.requester@ust.edu.ph"
   };
   store.applyAuthenticatedUser(store.localUser);
   store.setData({
     reservations: [{
       id: "REQ-1",
-      requester: "Maria Jua",
+      requester: "Student Body Requester",
       resourceId: "R-1",
       resourceName: "Projector",
       office: "EdTech",
@@ -245,10 +245,10 @@ test("super admin can provision a valid UST SSO email", async () => {
   const store = new ReservataStore();
   store.apiAvailable = false;
   store.localUser = {
-    name: "Sandra Alma",
+    name: "All Offices Super Admin",
     role: "Super Admin",
     office: "All Offices",
-    email: "sandra.alma@ust.edu.ph"
+    email: "all.offices.admin@ust.edu.ph"
   };
   store.applyAuthenticatedUser(store.localUser);
   store.setData({
@@ -284,10 +284,10 @@ test("super admin can manage additional requirement options", async () => {
   const store = new ReservataStore();
   store.apiAvailable = false;
   store.localUser = {
-    name: "Sandra Alma",
+    name: "All Offices Super Admin",
     role: "Super Admin",
     office: "All Offices",
-    email: "sandra.alma@ust.edu.ph"
+    email: "all.offices.admin@ust.edu.ph"
   };
   store.applyAuthenticatedUser(store.localUser);
   store.setData({ systemSettings: [{ id: "SYSTEM" }] });

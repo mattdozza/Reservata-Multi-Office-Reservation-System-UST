@@ -37,13 +37,13 @@ These credentials exist only in the local defense environment. Passwords are sto
 
 | Role | Email | Local password |
 | --- | --- | --- |
-| Requester | `maria.jua@ust.edu.ph` | `Requester2026!` |
-| Office Admin | `maria.santos@ust.edu.ph` | `OfficeAdmin2026!` |
+| Requester | `student.body.requester@ust.edu.ph` | `Requester2026!` |
+| Office Admin | `simbahayan.admin@ust.edu.ph` | `OfficeAdmin2026!` |
 | EdTech Office Admin | `edtech.admin@ust.edu.ph` | `EdTech2026!` |
 | Facilities Office Admin | `facilities.admin@ust.edu.ph` | `Facilities2026!` |
-| Super Admin | `sandra.alma@ust.edu.ph` | `SuperAdmin2026!` |
-| OSG Admin | `andrea.reyes@ust.edu.ph` | `OsgAdmin2026!` |
-| OSG Requester | `paolo.reyes@ust.edu.ph` | `Visitor2026!` |
+| Super Admin | `all.offices.admin@ust.edu.ph` | `SuperAdmin2026!` |
+| OSG Admin | `osg.admin@ust.edu.ph` | `OsgAdmin2026!` |
+| OSG Requester | `cics.visitor.requester@ust.edu.ph` | `Visitor2026!` |
 
 ## Available Commands
 
