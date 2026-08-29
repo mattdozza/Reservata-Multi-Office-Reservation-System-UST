@@ -96,6 +96,31 @@ function sanitizeState(input) {
   return Object.fromEntries(allowedKeys.map((key) => [key, Array.isArray(input[key]) ? input[key] : []]));
 }
 
+function notificationWithOffice(notification, offices) {
+  if (notification.office) return notification;
+  const message = String(notification.message || "");
+  const office = offices.find((item) =>
+    message.includes(item.name) && /(routed to|needs review|verification|uploaded a receipt)/i.test(message)
+  );
+  return office ? { ...notification, office: office.name } : notification;
+}
+
+function uniqueNotifications(notifications, offices) {
+  const seen = new Set();
+  return notifications.map((notification, index) => {
+    const item = notificationWithOffice(notification, offices);
+    const base = item.id || `N-${index + 1}`;
+    let id = base;
+    let suffix = 2;
+    while (seen.has(id)) {
+      id = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    seen.add(id);
+    return id === item.id ? item : { ...item, id };
+  });
+}
+
 function normalizeState(input) {
   const clean = sanitizeState(input);
   clean.resources = clean.resources.map((resource) => ({
@@ -126,14 +151,7 @@ function normalizeState(input) {
       }]
     };
   });
-  clean.notifications = clean.notifications.map((notification) => {
-    if (notification.office) return notification;
-    const message = String(notification.message || "");
-    const office = clean.offices.find((item) =>
-      message.includes(item.name) && /(routed to|needs review|verification|uploaded a receipt)/i.test(message)
-    );
-    return office ? { ...notification, office: office.name } : notification;
-  });
+  clean.notifications = uniqueNotifications(clean.notifications, clean.offices);
   return clean;
 }
 

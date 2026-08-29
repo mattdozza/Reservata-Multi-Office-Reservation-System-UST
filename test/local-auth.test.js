@@ -245,6 +245,55 @@ test("local API blocks reservations against hidden pending conflicts and reports
   }
 });
 
+test("single notification read only clears the clicked duplicate-safe id", async () => {
+  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const database = JSON.parse(originalDatabase);
+  database.notifications.unshift(
+    { id: "N-DUPLICATE", user: "Student Body Requester", message: "Resource Owner Review was approved. Current status: Confirmed.", unread: true, type: "Approval" },
+    { id: "N-DUPLICATE", user: "Student Body Requester", message: "Resource Owner Review was approved. Current status: Confirmed.", unread: true, type: "Approval" }
+  );
+  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
+
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "student.body.requester@ust.edu.ph", password: "Requester2026!" })
+    });
+    assert.equal(login.status, 200);
+    const { token } = await login.json();
+
+    const stateResponse = await fetch(`${baseUrl}/api/state`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const state = await stateResponse.json();
+    const duplicates = state.notifications.filter((item) => item.message === "Resource Owner Review was approved. Current status: Confirmed.");
+    assert.equal(new Set(duplicates.map((item) => item.id)).size, duplicates.length);
+
+    const clicked = duplicates[1].id;
+    const read = await fetch(`${baseUrl}/api/notifications/read`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: clicked })
+    });
+    const readBody = await read.json();
+    assert.equal(read.status, 200, readBody.error);
+    const updated = readBody.notifications.filter((item) => item.message === "Resource Owner Review was approved. Current status: Confirmed.");
+    assert.equal(updated.filter((item) => !item.unread).length, 1);
+    assert.equal(updated.find((item) => item.id === clicked).unread, false);
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+  }
+});
 test("super admin can mark visible notifications read through the local API", async () => {
   const dbPath = path.join(__dirname, "..", "data", "db.json");
   const originalDatabase = fs.readFileSync(dbPath, "utf8");

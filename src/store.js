@@ -96,6 +96,22 @@ function notificationWithOffice(notification, offices) {
   return office ? { ...notification, office: office.name } : notification;
 }
 
+function uniqueNotifications(notifications, offices) {
+  const seen = new Set();
+  return notifications.map((notification, index) => {
+    const item = notificationWithOffice(notification, offices);
+    const base = item.id || `N-${index + 1}`;
+    let id = base;
+    let suffix = 2;
+    while (seen.has(id)) {
+      id = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    seen.add(id);
+    return id === item.id ? item : { ...item, id };
+  });
+}
+
 export class ReservataStore {
   constructor() {
     this.data = clone(DEFAULT_DATA);
@@ -167,7 +183,7 @@ export class ReservataStore {
       : [{ id: "SYSTEM", requirementOptions: defaultRequirementOptions() }];
     this.data.resources = this.data.resources.map((item) => ({ ...item, workflowTemplateId: item.workflowTemplateId || "WF-BASIC" }));
     this.data.reservations = this.data.reservations.map(hydrateLegacyReservation);
-    this.data.notifications = this.data.notifications.map((item) => notificationWithOffice(item, this.data.offices));
+    this.data.notifications = uniqueNotifications(this.data.notifications, this.data.offices);
   }
 
   get settings() {

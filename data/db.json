@@ -529,43 +529,44 @@
       "id": "N-002",
       "user": "Anna Villanueva",
       "message": "Please wait for payment verification before final confirmation.",
-      "unread": true
+      "unread": false
     },
     {
       "id": "N-1787702830119",
       "user": "CICS Visitor Requester",
       "message": "Resource Owner Review was approved. Current status: Confirmed.",
-      "unread": true
+      "unread": false
     },
     {
       "id": "N-1787702838437",
       "user": "Anna Villanueva",
       "message": "Multipurpose Hall payment was verified. The reservation is confirmed.",
-      "unread": true
+      "unread": false
     },
     {
-      "id": "N-1787702830119",
+      "id": "N-1787702830119-21433A8B",
       "user": "CICS Visitor Requester",
       "message": "Resource Owner Review was approved. Current status: Confirmed.",
-      "unread": true
+      "unread": false
     },
     {
-      "id": "N-1787702838437",
+      "id": "N-1787702838437-BBF424AA",
       "user": "Anna Villanueva",
       "message": "Multipurpose Hall payment was verified. The reservation is confirmed.",
-      "unread": true
+      "unread": false
     },
     {
-      "id": "N-1787702830119",
+      "id": "N-1787702830119-F3209253",
       "user": "CICS Visitor Requester",
       "message": "Resource Owner Review was approved. Current status: Confirmed.",
-      "unread": true
+      "unread": false
     },
     {
       "id": "N-1787703136405",
       "user": "Student Body Requester",
       "message": "Main Chapel request was submitted and routed to Simbahayan.",
-      "unread": false
+      "unread": false,
+      "office": "Simbahayan"
     },
     {
       "id": "N-001",
@@ -586,13 +587,13 @@
       "unread": false
     },
     {
-      "id": "N-1787706752591",
+      "id": "N-1787706752591-A78571E2",
       "user": "Student Body Requester",
       "message": "External Guest and Security Review was approved. Current status: Under Additional Review.",
       "unread": false
     },
     {
-      "id": "N-1787706752591",
+      "id": "N-1787706752591-7D542E1C",
       "user": "Student Body Requester",
       "message": "External Guest and Security Review was approved. Current status: Under Additional Review.",
       "unread": false
