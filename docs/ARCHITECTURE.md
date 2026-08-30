@@ -40,7 +40,7 @@ The React persistence layer automatically selects:
 - `src/main.jsx`, `src/App.jsx`, `src/components`, and `src/views` implement the required React and JavaScript frontend.
 - `npm run build` creates static assets suitable for S3 and CloudFront.
 - `server.js` remains a local development adapter; the corresponding JavaScript Lambda handlers are implemented in `aws/backend/src/handlers`.
-- `data/db.json` is a local development adapter whose entities map to DynamoDB records.
+- `data/db.json` is a local development adapter whose entities map to DynamoDB records.`r`n- `src/store.js` is a compatibility entry point; domain store behavior is split under `src/store/` into reservation, resource, payment, admin, visitor, notification, and shared helper modules.
 - Named local defense accounts demonstrate RBAC while live University SSO configuration is unavailable; users never select their own role.
 - React guards protect navigation in local mode. In AWS mode, every Lambda repeats role and office checks using the authenticated SSO identity and the Users table; frontend checks alone are never treated as security.
 
