@@ -39,7 +39,7 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
     items = items.filter((item) => {
       const matchesType = filter === "All" || item.type === filter;
       const matchesStatus = statusFilter === "All" || item.status === statusFilter;
-      const matchesQuery = `${item.name} ${item.office} ${item.location}`.toLowerCase().includes(normalized);
+      const matchesQuery = `${item.name} ${item.office} ${item.location} ${item.assetTag || ""} ${item.serialNumber || ""} ${(item.tags || []).join(" ")}`.toLowerCase().includes(normalized);
       return matchesType && matchesStatus && matchesQuery;
     });
     if (sort === "status") items = sortBy(items, "status");
@@ -90,9 +90,15 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
               <h3>{resource.name}</h3>
               <p>
                 {resource.office} · {resource.location}<br />
+                {resource.assetTag && <>Tag: {resource.assetTag}<br /></>}
                 Capacity: {resource.capacity}
                 {resource.requiresPayment && ` · Fee: PHP ${resource.fee}`}
               </p>
+              {resource.tags?.length ? (
+                <div className="tag-list">
+                  {resource.tags.map((tag) => <span key={tag}>{tag}</span>)}
+                </div>
+              ) : null}
               {role === "requester" ? (
                 <button
                   className="primary-button"
@@ -292,6 +298,8 @@ export function ReservationsView({ store, onAction }) {
   const [status, setStatus] = useState("All");
   const upload = (id, file) => onAction(() => store.uploadReceipt(id, file), "Receipt uploaded for verification.");
   const uploadDocument = (id, file) => onAction(() => store.uploadSupportingDocument(id, file), "Supporting document uploaded.");
+  const cancel = (id, reason) => onAction(() => store.cancelReservation(id, reason), "Reservation cancelled.");
+  const reschedule = (id, slot) => onAction(() => store.rescheduleReservation(id, slot), "Reservation reschedule submitted for approval.");
   const items = store.myReservations().filter((item) => {
     const normalized = query.trim().toLowerCase();
     const matchesQuery = `${item.resourceName} ${item.office} ${item.purpose} ${item.status}`.toLowerCase().includes(normalized);
@@ -327,7 +335,7 @@ export function ReservationsView({ store, onAction }) {
           {statusOptions.map((item) => <option key={item}>{item}</option>)}
         </select>
       </div>
-      <ReservationRows store={store} items={items} onUpload={upload} onDocumentUpload={uploadDocument} />
+      <ReservationRows store={store} items={items} onUpload={upload} onDocumentUpload={uploadDocument} onCancel={cancel} onReschedule={reschedule} />
     </article>
   );
 }
@@ -673,11 +681,25 @@ export function PaymentsView({ store, onAction }) {
   );
 }
 
-export function CalendarView({ store }) {
+function canManageReservationStatus(store, reservation) {
+  if (store.session.activeRole === "superAdmin") return true;
+  return store.session.activeRole === "officeAdmin" && reservation.office === store.officeScope;
+}
+
+function reservationStarted(reservation) {
+  return new Date(`${reservation.date}T${reservation.start || "00:00"}`).getTime() <= Date.now();
+}
+
+function reservationEnded(reservation) {
+  return new Date(`${reservation.date}T${reservation.end || reservation.start || "00:00"}`).getTime() <= Date.now();
+}
+
+export function CalendarView({ store, onAction }) {
   const [month, setMonth] = useState(todayIso().slice(0, 7));
   const [resourceId, setResourceId] = useState("All");
   const [status, setStatus] = useState("All");
   const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [statusAction, setStatusAction] = useState(null);
   const [year, monthNumber] = month.split("-").map(Number);
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
   const firstDay = new Date(year, monthNumber - 1, 1).getDay();
@@ -746,9 +768,46 @@ export function CalendarView({ store }) {
               <p>{item.start}-{item.end} · {item.requester} · {item.office}</p>
               <p>{item.purpose}</p>
             </div>
+            {canManageReservationStatus(store, item) && onAction && (
+              <div className="split-actions">
+                {item.status === "Confirmed" && !reservationStarted(item) && (
+                  <button className="secondary-button" onClick={() => setStatusAction({ item, status: "Cancelled", label: "Cancel Reservation" })} type="button">Cancel</button>
+                )}
+                {item.status === "Confirmed" && reservationStarted(item) && !reservationEnded(item) && (
+                  <button className="success-button" onClick={() => onAction(() => store.updateReservationLifecycleStatus(item.id, "In Use"), "Reservation marked in use.")} type="button">Start Use</button>
+                )}
+                {(item.status === "In Use" || (item.status === "Confirmed" && reservationEnded(item))) && (
+                  <button className="success-button" onClick={() => onAction(() => store.updateReservationLifecycleStatus(item.id, "Completed"), "Reservation completed.")} type="button">Complete</button>
+                )}
+                {item.status === "Confirmed" && reservationStarted(item) && (
+                  <button className="secondary-button" onClick={() => setStatusAction({ item, status: "No Show", label: "Mark No Show" })} type="button">No Show</button>
+                )}
+                {!["Rejected", "Cancelled", "Completed", "Expired", "No Show"].includes(item.status) && (
+                  <button className="secondary-button" onClick={() => setStatusAction({ item, status: "Expired", label: "Expire Request" })} type="button">Expire</button>
+                )}
+              </div>
+            )}
           </div>
         ))}
         {!dayEvents.length && <EmptyState>No reservations for the selected day.</EmptyState>}
+        {statusAction && (
+          <ReasonModal
+            title={`${statusAction.label}?`}
+            message="This updates the reservation lifecycle and notifies the requester."
+            confirmLabel={statusAction.label}
+            details={[
+              ["Request", statusAction.item.resourceName],
+              ["Status", statusAction.status],
+              ["Requester", statusAction.item.requester]
+            ]}
+            onCancel={() => setStatusAction(null)}
+            onConfirm={async (reason) => {
+              const current = statusAction;
+              setStatusAction(null);
+              await onAction(() => store.updateReservationLifecycleStatus(current.item.id, current.status, reason), `Reservation marked ${current.status}.`);
+            }}
+          />
+        )}
       </article>
     </div>
   );

@@ -2,6 +2,12 @@ import { authenticatedUser, requireRole, ROLES } from "../lib/auth.mjs";
 import { HttpError, json, method, parseBody, requireFields, wrap } from "../lib/http.mjs";
 import { repository } from "../lib/repository.mjs";
 import { activityRecord, createId, newestFirst, now } from "../lib/records.mjs";
+import {
+  DEFAULT_PAYMENT_DEADLINE_HOURS,
+  MAX_PAYMENT_DEADLINE_HOURS,
+  MIN_PAYMENT_DEADLINE_HOURS,
+  normalizePaymentDeadlineHours
+} from "../lib/reservationLifecycle.mjs";
 import { TABLES } from "../lib/tables.mjs";
 
 const ALLOWED_ROLES = new Set(Object.values(ROLES));
@@ -15,10 +21,38 @@ function routeName(event) {
   if (path.includes("/offices/")) return "office-item";
   if (path === "/workflows") return "workflows";
   if (path.includes("/workflows/")) return "workflow-item";
+  if (path === "/settings") return "settings";
   if (path === "/notifications") return "notifications";
   if (path.endsWith("/notifications/read")) return "notification-read";
   if (path === "/activity") return "activity";
   return "unknown";
+}
+
+function settingsFrom(body, existing = {}) {
+  const paymentDeadlineHours = Number(body.paymentDeadlineHours ?? existing.paymentDeadlineHours ?? DEFAULT_PAYMENT_DEADLINE_HOURS);
+  if (!Number.isInteger(paymentDeadlineHours) || paymentDeadlineHours < MIN_PAYMENT_DEADLINE_HOURS || paymentDeadlineHours > MAX_PAYMENT_DEADLINE_HOURS) {
+    throw new HttpError(400, `Payment deadline must be a whole number from ${MIN_PAYMENT_DEADLINE_HOURS} to ${MAX_PAYMENT_DEADLINE_HOURS} hours.`);
+  }
+  const requirementOptions = Array.isArray(body.requirementOptions)
+    ? body.requirementOptions.map((option) => ({
+      id: String(option.id || "").trim(),
+      label: String(option.label || "").trim(),
+      help: String(option.help || "").trim(),
+      status: option.status === "Archived" ? "Archived" : "Active",
+      locked: Boolean(option.locked)
+    })).filter((option) => option.id && option.label && option.help)
+    : existing.requirementOptions;
+
+  return {
+    ...existing,
+    id: "SYSTEM",
+    defaultWorkflowTemplateId: body.defaultWorkflowTemplateId ?? existing.defaultWorkflowTemplateId ?? "WF-BASIC",
+    maxReservationHours: body.maxReservationHours ?? existing.maxReservationHours,
+    parkingCapacity: body.parkingCapacity ?? existing.parkingCapacity,
+    paymentDeadlineHours: normalizePaymentDeadlineHours(paymentDeadlineHours),
+    requirementOptions,
+    updatedAt: now()
+  };
 }
 
 function workflowFrom(body, existing = {}) {
@@ -202,6 +236,22 @@ export function createHandler(repo = repository) {
         { Put: { TableName: TABLES.activity, Item: activityRecord(user, workflow.status === "Archived" ? "Approval workflow archived" : "Approval workflow updated", workflow.name) } }
       ]);
       return json(200, workflow);
+    }
+
+    if (route === "settings" && requestMethod === "GET") {
+      requireRole(user, ROLES.superAdmin);
+      return json(200, { items: await repo.scan(TABLES.systemSettings) });
+    }
+
+    if (route === "settings" && requestMethod === "PATCH") {
+      requireRole(user, ROLES.superAdmin);
+      const existing = await repo.get(TABLES.systemSettings, { id: "SYSTEM" }) || {};
+      const settings = settingsFrom(parseBody(event), existing);
+      await repo.transact([
+        { Put: { TableName: TABLES.systemSettings, Item: settings } },
+        { Put: { TableName: TABLES.activity, Item: activityRecord(user, "System settings updated", `${settings.paymentDeadlineHours}h payment window`) } }
+      ]);
+      return json(200, settings);
     }
 
     if (route === "notifications" && requestMethod === "GET") {

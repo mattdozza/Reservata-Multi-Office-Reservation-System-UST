@@ -38,17 +38,20 @@ function reservationEndTime(reservation) {
 
 function RequesterDashboard({ store, onNavigate, onAction }) {
   const mine = store.myReservations();
-  const active = mine.filter((item) => !["Rejected", "Confirmed"].includes(item.status));
+  const active = mine.filter((item) => !["Rejected", "Cancelled", "Confirmed", "Completed", "Expired", "No Show"].includes(item.status));
   const overdue = active.filter((item) => store.isReservationOverdue(item));
   const outgoing = mine
-    .filter((item) => !["Rejected", "Cancelled", "Completed"].includes(item.status))
+    .filter((item) => !["Rejected", "Cancelled", "Completed", "Expired", "No Show"].includes(item.status))
     .filter((item) => reservationEndTime(item) >= Date.now())
     .sort((left, right) => reservationTime(left) - reservationTime(right));
   const requesterStatus = [
     { label: "Active", value: active.length },
     { label: "Confirmed", value: mine.filter((item) => item.status === "Confirmed").length },
+    { label: "Completed", value: mine.filter((item) => item.status === "Completed").length },
     { label: "For Payment", value: mine.filter((item) => item.status === "For Payment").length },
-    { label: "Rejected", value: mine.filter((item) => item.status === "Rejected").length }
+    { label: "Rejected", value: mine.filter((item) => item.status === "Rejected").length },
+    { label: "Expired", value: mine.filter((item) => item.status === "Expired").length },
+    { label: "Cancelled", value: mine.filter((item) => item.status === "Cancelled").length }
   ];
   return (
     <>
@@ -102,7 +105,7 @@ function RequesterDashboard({ store, onNavigate, onAction }) {
 
 function OfficeAdminDashboard({ store, onAction }) {
   const reservations = store.officeReservations;
-  const statusItems = ["Under Owner Review", "Under Additional Review", "For Payment", "Confirmed", "Rejected"].map((status) => ({
+  const statusItems = ["Under Owner Review", "Under Additional Review", "For Payment", "Confirmed", "In Use", "Completed", "Rejected", "Cancelled", "Expired", "No Show"].map((status) => ({
     label: status,
     value: reservations.filter((item) => item.status === status).length
   }));
@@ -167,7 +170,10 @@ function SuperAdminDashboard({ store, onNavigate }) {
       <div className="section-gap">
         <ChartSummary title="Reservation decisions" items={[
           { label: "Confirmed", value: store.data.reservations.filter((item) => item.status === "Confirmed").length },
+          { label: "Completed", value: store.data.reservations.filter((item) => item.status === "Completed").length },
           { label: "Rejected", value: store.data.reservations.filter((item) => item.status === "Rejected").length },
+          { label: "Expired", value: store.data.reservations.filter((item) => item.status === "Expired").length },
+          { label: "No Show", value: store.data.reservations.filter((item) => item.status === "No Show").length },
           { label: "For Payment", value: store.data.reservations.filter((item) => item.status === "For Payment").length },
           { label: "In Review", value: store.data.reservations.filter((item) => ["Under Owner Review", "Under Additional Review"].includes(item.status)).length }
         ]} />

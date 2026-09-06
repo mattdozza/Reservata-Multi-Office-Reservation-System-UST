@@ -18,7 +18,7 @@ import { notificationMethods } from "./notifications.js";
 import { paymentMethods } from "./payments.js";
 import { reservationMethods } from "./reservations.js";
 import { resourceMethods } from "./resources.js";
-import { defaultRequirementOptions, uniqueNotifications } from "./shared.js";
+import { defaultRequirementOptions, normalizeAssetTag, normalizePaymentDeadlineHours, normalizeResourceTags, uniqueNotifications } from "./shared.js";
 import { visitorMethods } from "./visitors.js";
 
 export class ReservataStore {
@@ -87,19 +87,28 @@ export class ReservataStore {
       ? this.data.systemSettings.map((item, index) => ({
         ...item,
         id: item.id || (index === 0 ? "SYSTEM" : nextId("SET")),
+        paymentDeadlineHours: normalizePaymentDeadlineHours(item.paymentDeadlineHours),
         requirementOptions: item.requirementOptions?.length ? item.requirementOptions : defaultRequirementOptions()
       }))
-      : [{ id: "SYSTEM", requirementOptions: defaultRequirementOptions() }];
-    this.data.resources = this.data.resources.map((item) => ({ ...item, workflowTemplateId: item.workflowTemplateId || "WF-BASIC" }));
+      : [{ id: "SYSTEM", paymentDeadlineHours: normalizePaymentDeadlineHours(), requirementOptions: defaultRequirementOptions() }];
+    this.data.resources = this.data.resources.map((item) => ({
+      ...item,
+      assetTag: normalizeAssetTag(item.assetTag || item.id),
+      serialNumber: String(item.serialNumber || "").trim(),
+      tags: normalizeResourceTags(item.tags || [item.type, item.office]),
+      workflowTemplateId: item.workflowTemplateId || "WF-BASIC"
+    }));
     this.data.reservations = this.data.reservations.map(hydrateLegacyReservation);
     this.data.notifications = uniqueNotifications(this.data.notifications, this.data.offices);
+    this.applyReservationLifecycle?.();
   }
 
   get settings() {
     if (!this.data.systemSettings.length) {
-      this.data.systemSettings.push({ id: "SYSTEM", requirementOptions: defaultRequirementOptions() });
+      this.data.systemSettings.push({ id: "SYSTEM", paymentDeadlineHours: normalizePaymentDeadlineHours(), requirementOptions: defaultRequirementOptions() });
     }
     const settings = this.data.systemSettings[0];
+    settings.paymentDeadlineHours = normalizePaymentDeadlineHours(settings.paymentDeadlineHours);
     if (!settings.requirementOptions?.length) settings.requirementOptions = defaultRequirementOptions();
     return settings;
   }

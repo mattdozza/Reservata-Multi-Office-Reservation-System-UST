@@ -1,6 +1,6 @@
 import { awsApi } from "../awsApi.js";
 import { nextId, nowLabel } from "../utils.js";
-import { MAX_RECEIPT_PREVIEW_BYTES, requireText } from "./shared.js";
+import { MAX_RECEIPT_PREVIEW_BYTES, RESOLVED_RESERVATION_STATUSES, requireText } from "./shared.js";
 
 export const paymentMethods = {
   get officePayments() {
@@ -25,8 +25,14 @@ export const paymentMethods = {
     if (!reservation || reservation.requester !== this.currentUser.name) {
       throw new Error("This reservation does not belong to your account.");
     }
+    if (reservation.status !== "For Payment") {
+      throw new Error("Receipts can only be uploaded while the reservation is awaiting payment.");
+    }
     const previousData = this.snapshot();
     const payment = this.data.payments.find((item) => item.id === reservation?.paymentId);
+    if (!payment || payment.status !== "Awaiting Receipt") {
+      throw new Error("This payment is no longer awaiting a receipt.");
+    }
     if (payment) {
       payment.receipt = file?.name || `uploaded-${reservation.id}.jpg`;
       payment.receiptType = file?.type || "";
@@ -52,6 +58,9 @@ export const paymentMethods = {
     if (!reservation || reservation.requester !== this.currentUser.name) {
       throw new Error("This reservation does not belong to your account.");
     }
+    if (RESOLVED_RESERVATION_STATUSES.includes(reservation.status)) {
+      throw new Error("Supporting documents can only be uploaded while a reservation is active.");
+    }
     const previousData = this.snapshot();
     const document = {
       id: nextId("DOC"),
@@ -74,6 +83,9 @@ export const paymentMethods = {
     if (!payment) return;
     const reservation = this.data.reservations.find((item) => item.id === payment.reservationId);
     this.requireOfficeRecord(reservation);
+    if (reservation.status !== "For Payment" || payment.status !== "Pending Verification") {
+      throw new Error("Only pending payment verification records can be decided.");
+    }
     const cleanReason = verified ? "" : requireText(reason, "Receipt rejection reason", 8);
     const previousData = this.snapshot();
     payment.status = verified ? "Verified" : "Rejected";

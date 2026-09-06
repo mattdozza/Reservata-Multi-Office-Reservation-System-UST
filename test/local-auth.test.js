@@ -14,7 +14,16 @@ const ACCOUNTS = [
   ["facilities.admin@ust.edu.ph", "Facilities2026!", "Office Admin"]
 ];
 
+function daysFromTodayIso(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
 test("local login authenticates accounts and derives their assigned roles", async () => {
+  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const server = createServer();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -93,12 +102,191 @@ test("local login authenticates accounts and derives their assigned roles", asyn
   } finally {
     server.close();
     await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+  }
+});
+
+test("local API expires overdue unfinished reservations and payment handoffs", async () => {
+  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const database = JSON.parse(originalDatabase);
+  const date = daysFromTodayIso(-1);
+  database.reservations.unshift({
+    id: "REQ-LOCAL-EXPIRED",
+    requester: "Student Body Requester",
+    resourceId: "R-001",
+    resourceName: "Multipurpose Hall",
+    office: "Simbahayan",
+    type: "Facility",
+    date,
+    start: "09:00",
+    end: "10:00",
+    quantity: 1,
+    purpose: "Overdue payment handoff",
+    status: "For Payment",
+    submittedAt: "Just now",
+    requiresPayment: true,
+    paymentId: "PAY-LOCAL-EXPIRED",
+    approvalSteps: [{ id: "REQ-LOCAL-EXPIRED-OWNER", office: "Simbahayan", status: "Approved", sequence: 1 }]
+  });
+  database.payments.unshift({
+    id: "PAY-LOCAL-EXPIRED",
+    reservationId: "REQ-LOCAL-EXPIRED",
+    requester: "Student Body Requester",
+    office: "Simbahayan",
+    amount: 1000,
+    receipt: "Awaiting upload",
+    status: "Awaiting Receipt"
+  });
+  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
+
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "student.body.requester@ust.edu.ph", password: "Requester2026!" })
+    });
+    assert.equal(login.status, 200);
+    const { token } = await login.json();
+
+    const stateResponse = await fetch(`${baseUrl}/api/state`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const state = await stateResponse.json();
+    assert.equal(stateResponse.status, 200, state.error);
+    assert.equal(state.reservations.find((item) => item.id === "REQ-LOCAL-EXPIRED").status, "Expired");
+    assert.equal(state.payments.find((item) => item.id === "PAY-LOCAL-EXPIRED").status, "Expired");
+    assert.ok(state.notifications.some((item) => item.message.includes("expired because the scheduled time passed")));
+
+    const saved = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+    assert.equal(saved.reservations.find((item) => item.id === "REQ-LOCAL-EXPIRED").status, "Expired");
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+  }
+});
+
+test("local API accepts requester cancellation and reschedule mutations", async () => {
+  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const database = JSON.parse(originalDatabase);
+  database.reservations.unshift(
+    {
+      id: "REQ-API-CANCEL",
+      requester: "Student Body Requester",
+      resourceId: "R-007",
+      resourceName: "Projector Set A",
+      office: "Simbahayan",
+      type: "Equipment",
+      date: daysFromTodayIso(5),
+      start: "09:00",
+      end: "10:00",
+      quantity: 1,
+      purpose: "Requester cancellation mutation",
+      status: "Under Owner Review",
+      approvalSteps: [{ id: "REQ-API-CANCEL-OWNER", office: "Simbahayan", status: "Pending", sequence: 1 }]
+    },
+    {
+      id: "REQ-API-RESCHEDULE",
+      requester: "Student Body Requester",
+      resourceId: "R-007",
+      resourceName: "Projector Set A",
+      office: "Simbahayan",
+      type: "Equipment",
+      date: daysFromTodayIso(6),
+      start: "11:00",
+      end: "12:00",
+      quantity: 1,
+      purpose: "Requester reschedule mutation",
+      status: "Confirmed",
+      approvalSteps: [{ id: "REQ-API-RESCHEDULE-OWNER", office: "Simbahayan", status: "Approved", sequence: 1 }]
+    }
+  );
+  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
+
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "student.body.requester@ust.edu.ph", password: "Requester2026!" })
+    });
+    assert.equal(login.status, 200);
+    const { token } = await login.json();
+    const stateResponse = await fetch(`${baseUrl}/api/state`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const state = await stateResponse.json();
+    const cancelled = state.reservations.find((item) => item.id === "REQ-API-CANCEL");
+    cancelled.status = "Cancelled";
+    cancelled.cancelledAt = "Just now";
+    cancelled.cancelledBy = "Student Body Requester";
+    cancelled.cancellationReason = "Schedule no longer needed";
+    cancelled.approvalSteps[0].status = "Skipped";
+    const rescheduled = state.reservations.find((item) => item.id === "REQ-API-RESCHEDULE");
+    rescheduled.status = "Under Owner Review";
+    rescheduled.date = daysFromTodayIso(8);
+    rescheduled.start = "14:00";
+    rescheduled.end = "15:00";
+    rescheduled.rescheduleCount = 1;
+    rescheduled.rescheduledAt = "Just now";
+    rescheduled.approvalSteps[0].status = "Pending";
+    state.notifications.unshift({ id: "N-API-LIFECYCLE", user: "Simbahayan", office: "Simbahayan", message: "Requester changed reservations.", unread: true, type: "Reservation" });
+    state.activity.unshift({ id: "ACT-API-LIFECYCLE", action: "Reservation lifecycle changed", actor: "Student Body Requester", target: "Projector Set A", time: "Just now" });
+
+    const save = await fetch(`${baseUrl}/api/state`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(state)
+    });
+    const saveBody = await save.json();
+    assert.equal(save.status, 200, saveBody.error);
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
   }
 });
 
 test("supporting office can approve final step and create owner payment handoff", async () => {
   const dbPath = path.join(__dirname, "..", "data", "db.json");
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const database = JSON.parse(originalDatabase);
+  const date = daysFromTodayIso(10);
+  database.reservations.unshift({
+    id: "REQ-LOCAL-HANDOFF-SOURCE",
+    requester: "Student Body Requester",
+    resourceId: "R-002",
+    resourceName: "Main Chapel",
+    office: "Simbahayan",
+    type: "Facility",
+    date,
+    start: "09:00",
+    end: "10:00",
+    quantity: 1,
+    purpose: "Future approval handoff test",
+    status: "Under Additional Review",
+    submittedAt: "Just now",
+    requiresPayment: true,
+    workflowTemplateId: "WF-EVENT",
+    approvalSteps: [
+      { id: "REQ-LOCAL-HANDOFF-SOURCE-OWNER", name: "Venue Owner Review", office: "Simbahayan", status: "Approved", sequence: 1 },
+      { id: "REQ-LOCAL-HANDOFF-SOURCE-FAC", name: "Facilities and Setup Review", office: "Facilities Management", status: "Pending", sequence: 2 }
+    ]
+  });
+  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
   const { decideApprovalStep } = await import("../src/workflows.js");
   const server = createServer();
   server.listen(0, "127.0.0.1");
@@ -238,6 +426,58 @@ test("local API blocks reservations against hidden pending conflicts and reports
       body: JSON.stringify(state)
     });
     assert.equal(save.status, 409);
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+  }
+});
+
+test("local API ignores expired reservations when checking availability conflicts", async () => {
+  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const database = JSON.parse(originalDatabase);
+  const date = daysFromTodayIso(10);
+  database.reservations.unshift({
+    id: "REQ-EXPIRED-NONBLOCKING",
+    requester: "Other Requester",
+    resourceId: "R-007",
+    resourceName: "Projector Set A",
+    office: "Simbahayan",
+    type: "Equipment",
+    date,
+    start: "09:00",
+    end: "10:00",
+    quantity: 1,
+    purpose: "Expired request should not block",
+    status: "Expired",
+    submittedAt: "Just now",
+    requiresPayment: false,
+    approvalSteps: [{ id: "REQ-EXPIRED-NONBLOCKING-OWNER", office: "Simbahayan", status: "Skipped", sequence: 1 }]
+  });
+  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
+
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "student.body.requester@ust.edu.ph", password: "Requester2026!" })
+    });
+    assert.equal(login.status, 200);
+    const { token } = await login.json();
+
+    const availability = await fetch(`${baseUrl}/api/resources/R-007/availability?date=${date}&start=09%3A30&end=10%3A30`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const availabilityBody = await availability.json();
+    assert.equal(availability.status, 200, availabilityBody.error);
+    assert.equal(availabilityBody.status, "available");
   } finally {
     server.close();
     await once(server, "close");

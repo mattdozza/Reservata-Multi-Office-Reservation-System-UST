@@ -4,11 +4,13 @@ import { authenticatedUser, requireOffice, requireRole, ROLES } from "../lib/aut
 import { HttpError, json, method, parseBody, requireFields, wrap } from "../lib/http.mjs";
 import { repository } from "../lib/repository.mjs";
 import { activityRecord, createId, newestFirst, notificationRecord, now } from "../lib/records.mjs";
+import { effectivePaymentDeadlineHours, expireReservations, paymentDeadlineFor, RESOLVED_RESERVATION_STATUSES } from "../lib/reservationLifecycle.mjs";
 import { lockExpiry, reservationSlots } from "../lib/slots.mjs";
 import { TABLES } from "../lib/tables.mjs";
 import { buildApprovalSteps, canDecideStep, decideApprovalStep } from "../lib/workflows.mjs";
 
-const BLOCKING_STATUSES = new Set(["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment"]);
+const BLOCKING_STATUSES = new Set(["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment", "In Use"]);
+const ACTIVE_PAYMENT_STATUSES = new Set(["Awaiting Receipt", "Pending Verification"]);
 const ALLOWED_DOCUMENTS = new Set(["image/jpeg", "image/png", "application/pdf"]);
 const BUSINESS_DAY_START = 8 * 60;
 const BUSINESS_DAY_END = 17 * 60;
@@ -75,8 +77,40 @@ function safeFilename(value) {
   return String(value).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 100);
 }
 
+function requireText(value, label, minimum = 1) {
+  const text = String(value || "").trim();
+  if (text.length < minimum) throw new HttpError(400, `${label} must be at least ${minimum} characters.`);
+  return text;
+}
+
+function reservationStartPassed(reservation) {
+  const startTime = new Date(`${reservation.date}T${reservation.start || "00:00"}`).getTime();
+  return Number.isFinite(startTime) && startTime <= Date.now();
+}
+
+function resetRouteSteps(steps = []) {
+  const firstSequence = Math.min(...steps.map((step) => Number(step.sequence || 1)));
+  return steps.map((step) => ({
+    ...step,
+    status: Number(step.sequence || 1) === firstSequence ? "Pending" : "Waiting",
+    decidedBy: "",
+    decidedAt: "",
+    reason: ""
+  }));
+}
+
+function skippedPendingSteps(steps = []) {
+  return steps.map((step) => ["Pending", "Waiting"].includes(step.status) ? { ...step, status: "Skipped" } : step);
+}
+
+function canManageStatus(user, reservation) {
+  return user.role === ROLES.superAdmin || (user.role === ROLES.officeAdmin && reservation.office === user.office);
+}
+
 async function reservationsForDate(repo, resourceId, date) {
-  return repo.query(TABLES.reservations, "resource-date-index", "resourceDate", `${resourceId}#${date}`);
+  const items = await repo.query(TABLES.reservations, "resource-date-index", "resourceDate", `${resourceId}#${date}`);
+  await expireReservations(repo, items);
+  return items;
 }
 
 function conflictsFor(items, start, end) {
@@ -155,16 +189,28 @@ async function availabilityResponse(repo, resource, date, start, end) {
 }
 
 async function listReservations(repo, user) {
-  if (user.role === ROLES.requester) return repo.query(TABLES.reservations, "requester-index", "requesterEmail", user.email);
+  if (user.role === ROLES.requester) {
+    const items = await repo.query(TABLES.reservations, "requester-index", "requesterEmail", user.email);
+    await expireReservations(repo, items);
+    return items;
+  }
   if (user.role === ROLES.officeAdmin) {
     const items = await repo.scan(TABLES.reservations);
-    return items.filter((item) => item.office === user.office || item.approvalSteps?.some((step) => step.office === user.office));
+    const scoped = items.filter((item) => item.office === user.office || item.approvalSteps?.some((step) => step.office === user.office));
+    await expireReservations(repo, scoped);
+    return scoped;
   }
   if (user.role === ROLES.osgAdmin) {
     const items = await repo.scan(TABLES.reservations);
-    return items.filter((item) => item.approvalSteps?.some((step) => step.office === "OSG"));
+    const scoped = items.filter((item) => item.approvalSteps?.some((step) => step.office === "OSG"));
+    await expireReservations(repo, scoped);
+    return scoped;
   }
-  if (user.role === ROLES.superAdmin) return repo.scan(TABLES.reservations);
+  if (user.role === ROLES.superAdmin) {
+    const items = await repo.scan(TABLES.reservations);
+    await expireReservations(repo, items);
+    return items;
+  }
   throw new HttpError(403, "Your role cannot access reservations.");
 }
 
@@ -195,8 +241,10 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       requireRole(user, ROLES.requester);
       const reservation = await repo.get(TABLES.reservations, { id: event.pathParameters?.id });
       if (!reservation) throw new HttpError(404, "Reservation not found.");
+      await expireReservations(repo, [reservation]);
+      if (reservation.status === "Expired") throw new HttpError(409, "This reservation expired before final confirmation.");
       if (reservation.requesterEmail !== user.email) throw new HttpError(403, "This reservation does not belong to your account.");
-      if (["Rejected", "Cancelled", "Completed"].includes(reservation.status)) {
+      if (["Rejected", "Cancelled", "Completed", "Expired"].includes(reservation.status)) {
         throw new HttpError(409, "Supporting documents can only be uploaded while a reservation is active.");
       }
       const body = parseBody(event);
@@ -268,6 +316,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         requesterEmail: user.email,
         resourceId: resource.id,
         resourceName: resource.name,
+        resourceAssetTag: resource.assetTag,
         resourceDate,
         office: resource.office,
         type: resource.type,
@@ -303,15 +352,164 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
     }
 
     if (requestMethod === "PATCH") {
-      requireRole(user, ROLES.officeAdmin, ROLES.osgAdmin);
       const reservation = await repo.get(TABLES.reservations, { id: event.pathParameters?.id });
       if (!reservation) throw new HttpError(404, "Reservation not found.");
+      await expireReservations(repo, [reservation]);
+      if (reservation.status === "Expired") throw new HttpError(409, "This reservation expired before final confirmation.");
       const body = parseBody(event);
+      const updatedAt = now();
+
+      if (rawPath.endsWith("/cancel")) {
+        requireRole(user, ROLES.requester);
+        if (reservation.requesterEmail !== user.email) throw new HttpError(403, "This reservation does not belong to your account.");
+        if (!["Under Owner Review", "Under Additional Review", "For Payment", "Confirmed"].includes(reservation.status)) throw new HttpError(409, "Only active upcoming reservations can be cancelled.");
+        if (reservationStartPassed(reservation)) throw new HttpError(409, "Reservations cannot be cancelled after the scheduled start time.");
+        const reason = requireText(body.reason, "Cancellation reason", 8);
+        const payment = reservation.paymentId ? await repo.get(TABLES.payments, { id: reservation.paymentId }) : null;
+        const transaction = [
+          { Update: {
+            TableName: TABLES.reservations,
+            Key: { id: reservation.id },
+            UpdateExpression: "SET #status = :cancelled, cancelledAt = :updatedAt, cancelledBy = :actor, cancellationReason = :reason, approvalSteps = :steps, updatedAt = :updatedAt",
+            ConditionExpression: "#status = :previous",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":cancelled": "Cancelled", ":updatedAt": updatedAt, ":actor": user.name, ":reason": reason, ":steps": skippedPendingSteps(reservation.approvalSteps), ":previous": reservation.status }
+          } },
+          { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.office, reservation.office, `${reservation.resourceName}: ${reservation.requester} cancelled the reservation. Reason: ${reason}`) } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation cancelled", reservation.resourceName, reservation.office) } },
+          ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
+            Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
+          }))
+        ];
+        if (payment && ACTIVE_PAYMENT_STATUSES.has(payment.status)) {
+          transaction.push({ Update: {
+            TableName: TABLES.payments,
+            Key: { id: payment.id },
+            UpdateExpression: "SET #status = :cancelled, rejectionReason = :reason, updatedAt = :updatedAt",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":cancelled": "Cancelled", ":reason": reason, ":updatedAt": updatedAt }
+          } });
+        }
+        await repo.transact(transaction);
+        return json(200, { ...reservation, status: "Cancelled", cancellationReason: reason, cancelledAt: updatedAt });
+      }
+
+      if (rawPath.endsWith("/reschedule")) {
+        requireRole(user, ROLES.requester);
+        if (reservation.requesterEmail !== user.email) throw new HttpError(403, "This reservation does not belong to your account.");
+        if (!["Under Owner Review", "Under Additional Review", "For Payment", "Confirmed"].includes(reservation.status)) throw new HttpError(409, "Only active upcoming reservations can be rescheduled.");
+        if (reservationStartPassed(reservation)) throw new HttpError(409, "Reservations cannot be rescheduled after the scheduled start time.");
+        requireFields(body, ["date", "start", "end"]);
+        assertReservationLeadTime(body.date);
+        if (body.start >= body.end) throw new HttpError(400, "End time must be later than start time.");
+        const resourceDate = `${reservation.resourceId}#${body.date}`;
+        const sameDay = await repo.query(TABLES.reservations, "resource-date-index", "resourceDate", resourceDate);
+        if (sameDay.some((item) => item.id !== reservation.id && BLOCKING_STATUSES.has(item.status) && overlaps(item, body))) {
+          throw new HttpError(409, "That resource already has an overlapping reservation request.");
+        }
+        const steps = resetRouteSteps(reservation.approvalSteps);
+        const payment = reservation.paymentId ? await repo.get(TABLES.payments, { id: reservation.paymentId }) : null;
+        const transaction = [
+          { Update: {
+            TableName: TABLES.reservations,
+            Key: { id: reservation.id },
+            UpdateExpression: "SET #status = :status, #date = :date, #start = :start, #end = :end, resourceDate = :resourceDate, approvalSteps = :steps, paymentId = :empty, rescheduledAt = :updatedAt, rescheduleCount = :count, updatedAt = :updatedAt",
+            ConditionExpression: "#status = :previous",
+            ExpressionAttributeNames: { "#status": "status", "#date": "date", "#start": "start", "#end": "end" },
+            ExpressionAttributeValues: {
+              ":status": "Under Owner Review",
+              ":date": body.date,
+              ":start": body.start,
+              ":end": body.end,
+              ":resourceDate": resourceDate,
+              ":steps": steps,
+              ":empty": "",
+              ":updatedAt": updatedAt,
+              ":count": Number(reservation.rescheduleCount || 0) + 1,
+              ":previous": reservation.status
+            }
+          } },
+          { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.office, reservation.office, `${reservation.resourceName}: ${reservation.requester} requested a reschedule to ${body.date} ${body.start}-${body.end}.`) } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation rescheduled", reservation.resourceName, reservation.office) } },
+          ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
+            Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
+          })),
+          ...reservationSlots(reservation.resourceId, body.date, body.start, body.end).map((slotKey) => ({ Put: {
+            TableName: TABLES.reservationLocks,
+            Item: { slotKey, reservationId: reservation.id, expiresAt: lockExpiry(body.date) },
+            ConditionExpression: "attribute_not_exists(slotKey)"
+          } }))
+        ];
+        if (payment && ACTIVE_PAYMENT_STATUSES.has(payment.status)) {
+          transaction.push({ Update: {
+            TableName: TABLES.payments,
+            Key: { id: payment.id },
+            UpdateExpression: "SET #status = :cancelled, rejectionReason = :reason, updatedAt = :updatedAt",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":cancelled": "Cancelled", ":reason": "Reservation was rescheduled and sent back for approval.", ":updatedAt": updatedAt }
+          } });
+        }
+        await repo.transact(transaction);
+        return json(200, { ...reservation, status: "Under Owner Review", date: body.date, start: body.start, end: body.end, approvalSteps: steps });
+      }
+
+      if (rawPath.endsWith("/status")) {
+        requireRole(user, ROLES.officeAdmin, ROLES.superAdmin);
+        if (!canManageStatus(user, reservation)) throw new HttpError(403, "Only the owning office or Super Admin can update this reservation lifecycle.");
+        const nextStatus = String(body.status || "").trim();
+        if (!["In Use", "Completed", "No Show", "Cancelled", "Expired"].includes(nextStatus)) throw new HttpError(400, "Unsupported reservation status.");
+        const reason = ["No Show", "Cancelled", "Expired"].includes(nextStatus) ? requireText(body.reason, "Reason", 8) : String(body.reason || "").trim();
+        if (nextStatus === "In Use" && reservation.status !== "Confirmed") throw new HttpError(409, "Only confirmed reservations can be marked in use.");
+        if (nextStatus === "Completed" && !["Confirmed", "In Use"].includes(reservation.status)) throw new HttpError(409, "Only confirmed or in-use reservations can be completed.");
+        if (nextStatus === "No Show" && (reservation.status !== "Confirmed" || !reservationStartPassed(reservation))) throw new HttpError(409, "No-show can only be recorded after a confirmed reservation's scheduled start.");
+        if (["Cancelled", "Expired"].includes(nextStatus) && RESOLVED_RESERVATION_STATUSES.has(reservation.status)) throw new HttpError(409, "This reservation is already closed.");
+        const payment = reservation.paymentId ? await repo.get(TABLES.payments, { id: reservation.paymentId }) : null;
+        let extraFields = {
+          "In Use": "startedAt = :updatedAt",
+          Completed: "completedAt = :updatedAt",
+          "No Show": "noShowAt = :updatedAt, noShowReason = :reason",
+          Cancelled: "overrideAt = :updatedAt, overrideBy = :actor, overrideReason = :reason, approvalSteps = :steps",
+          Expired: "overrideAt = :updatedAt, overrideBy = :actor, overrideReason = :reason, approvalSteps = :steps"
+        }[nextStatus];
+        const values = { ":next": nextStatus, ":updatedAt": updatedAt, ":previous": reservation.status };
+        if (extraFields.includes(":reason")) values[":reason"] = reason;
+        if (extraFields.includes(":actor")) values[":actor"] = user.name;
+        if (extraFields.includes(":steps")) values[":steps"] = skippedPendingSteps(reservation.approvalSteps);
+        const transaction = [
+          { Update: {
+            TableName: TABLES.reservations,
+            Key: { id: reservation.id },
+            UpdateExpression: `SET #status = :next, updatedAt = :updatedAt, ${extraFields}`,
+            ConditionExpression: "#status = :previous",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: values
+          } },
+          { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.requesterEmail, reservation.requester, `${reservation.resourceName} status changed to ${nextStatus}${reason ? `. Reason: ${reason}` : "."}`) } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, `Reservation marked ${nextStatus}`, reservation.resourceName, reservation.office) } }
+        ];
+        if (["Completed", "No Show", "Cancelled", "Expired"].includes(nextStatus)) {
+          transaction.push(...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
+            Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
+          })));
+        }
+        if (payment && ["Cancelled", "Expired"].includes(nextStatus) && ACTIVE_PAYMENT_STATUSES.has(payment.status)) {
+          transaction.push({ Update: {
+            TableName: TABLES.payments,
+            Key: { id: payment.id },
+            UpdateExpression: "SET #status = :paymentStatus, rejectionReason = :reason, updatedAt = :updatedAt",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":paymentStatus": nextStatus, ":reason": reason, ":updatedAt": updatedAt }
+          } });
+        }
+        await repo.transact(transaction);
+        return json(200, { ...reservation, status: nextStatus, updatedAt });
+      }
+
+      requireRole(user, ROLES.officeAdmin, ROLES.osgAdmin);
       if (typeof body.approved !== "boolean") throw new HttpError(400, "approved must be true or false.");
       requireFields(body, ["stepId"]);
       const pendingStep = reservation.approvalSteps?.find((item) => item.id === body.stepId);
       if (!pendingStep || !canDecideStep(user, pendingStep)) throw new HttpError(403, "This approval step is not assigned to your office.");
-      const updatedAt = now();
       const decision = decideApprovalStep(reservation, body.stepId, body.approved, user.name, updatedAt);
       const status = decision.status;
       const nextVersion = Number(reservation.workflowVersion || 1) + 1;
@@ -353,6 +551,8 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
 
       if (body.approved && status === "For Payment" && !reservation.paymentId) {
           const resource = await repo.get(TABLES.resources, { id: reservation.resourceId });
+          const settings = await repo.get(TABLES.systemSettings, { id: "SYSTEM" }) || {};
+          const paymentDeadlineHours = effectivePaymentDeadlineHours(resource, settings);
           payment = {
             id: createId("PAY"),
             reservationId: reservation.id,
@@ -362,7 +562,9 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
             amount: Number(resource?.fee || 0),
             receipt: "Awaiting upload",
             status: "Awaiting Receipt",
-            createdAt: updatedAt
+            createdAt: updatedAt,
+            paymentDeadlineHours,
+            paymentDeadlineAt: paymentDeadlineFor(reservation, null, updatedAt, paymentDeadlineHours)
           };
           transaction.push({ Put: { TableName: TABLES.payments, Item: payment, ConditionExpression: "attribute_not_exists(id)" } });
           transaction[0].Update.UpdateExpression += ", paymentId = :paymentId";

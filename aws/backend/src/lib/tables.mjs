@@ -7,6 +7,7 @@ export const TABLES = {
   users: process.env.USERS_TABLE,
   offices: process.env.OFFICES_TABLE,
   approvalWorkflows: process.env.APPROVAL_WORKFLOWS_TABLE,
+  systemSettings: process.env.SYSTEM_SETTINGS_TABLE,
   notifications: process.env.NOTIFICATIONS_TABLE,
   activity: process.env.ACTIVITY_TABLE
 };

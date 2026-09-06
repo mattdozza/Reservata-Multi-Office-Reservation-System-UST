@@ -12,7 +12,13 @@ const DIST_PATH = path.join(ROOT, "dist");
 const STATIC_ROOT = fs.existsSync(DIST_PATH) ? DIST_PATH : ROOT;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const sessions = new Map();
-const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment"];
+const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment", "In Use"];
+const RESOLVED_RESERVATION_STATUSES = ["Rejected", "Cancelled", "Completed", "Expired", "No Show"];
+const ACTIVE_PAYMENT_STATUSES = ["Awaiting Receipt", "Pending Verification"];
+const CLOSED_PAYMENT_STATUSES = ["Verified", "Rejected", "Cancelled", "Expired"];
+const DEFAULT_PAYMENT_DEADLINE_HOURS = 24;
+const MIN_PAYMENT_DEADLINE_HOURS = 1;
+const MAX_PAYMENT_DEADLINE_HOURS = 168;
 const BUSINESS_DAY_START = 8 * 60;
 const BUSINESS_DAY_END = 17 * 60;
 const DEFAULT_SLOT_MINUTES = 60;
@@ -121,11 +127,31 @@ function uniqueNotifications(notifications, offices) {
   });
 }
 
+function normalizeAssetTag(value) {
+  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function normalizeResourceTags(value) {
+  const source = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(source
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .map((item) => item.slice(0, 32)))].slice(0, 8);
+}
+
 function normalizeState(input) {
   const clean = sanitizeState(input);
   clean.resources = clean.resources.map((resource) => ({
     ...resource,
+    assetTag: normalizeAssetTag(resource.assetTag || resource.id),
+    serialNumber: String(resource.serialNumber || "").trim(),
+    tags: normalizeResourceTags(resource.tags || [resource.type, resource.office]),
     workflowTemplateId: resource.workflowTemplateId || "WF-BASIC"
+  }));
+  clean.systemSettings = (clean.systemSettings.length ? clean.systemSettings : [{ id: "SYSTEM" }]).map((settings) => ({
+    ...settings,
+    id: settings.id || "SYSTEM",
+    paymentDeadlineHours: normalizePaymentDeadlineHours(settings.paymentDeadlineHours)
   }));
   clean.reservations = clean.reservations.map((reservation) => {
     if (reservation.approvalSteps?.length) return reservation;
@@ -153,6 +179,158 @@ function normalizeState(input) {
   });
   clean.notifications = uniqueNotifications(clean.notifications, clean.offices);
   return clean;
+}
+
+function createRecordId(prefix) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function reservationEndPassed(reservation) {
+  if (!reservation?.date || !reservation?.end) return false;
+  const endTime = new Date(`${reservation.date}T${reservation.end}`).getTime();
+  return Number.isFinite(endTime) && endTime < Date.now();
+}
+
+function reservationStartPassed(reservation) {
+  if (!reservation?.date || !reservation?.start) return false;
+  const startTime = new Date(`${reservation.date}T${reservation.start}`).getTime();
+  return Number.isFinite(startTime) && startTime <= Date.now();
+}
+
+function normalizePaymentDeadlineHours(value, fallback = DEFAULT_PAYMENT_DEADLINE_HOURS) {
+  const number = Number(value);
+  if (Number.isInteger(number) && number >= MIN_PAYMENT_DEADLINE_HOURS && number <= MAX_PAYMENT_DEADLINE_HOURS) {
+    return number;
+  }
+  return fallback;
+}
+
+function effectivePaymentDeadlineHours(resource, settings = {}) {
+  return normalizePaymentDeadlineHours(
+    resource?.paymentDeadlineHours,
+    normalizePaymentDeadlineHours(settings?.paymentDeadlineHours)
+  );
+}
+
+function paymentDeadlineFor(reservation, payment, createdAt = nowIso(), deadlineHours = DEFAULT_PAYMENT_DEADLINE_HOURS) {
+  const base = new Date(payment?.createdAt || payment?.submittedAt || createdAt).getTime();
+  const rolling = Number.isFinite(base) ? new Date(base + deadlineHours * 60 * 60 * 1000).toISOString() : "";
+  const scheduled = reservation?.date && reservation?.start ? new Date(`${reservation.date}T${reservation.start}`).toISOString() : "";
+  if (!rolling) return scheduled;
+  if (!scheduled) return rolling;
+  return new Date(rolling).getTime() <= new Date(scheduled).getTime() ? rolling : scheduled;
+}
+
+function deadlinePassed(deadline) {
+  const value = new Date(deadline || "").getTime();
+  return Number.isFinite(value) && value < Date.now();
+}
+
+function appendNotification(database, user, message, type = "Reservation") {
+  const office = database.offices.find((item) => item.name === user);
+  database.notifications.unshift({
+    id: createRecordId("N"),
+    user,
+    ...(office ? { office: office.name } : {}),
+    message,
+    type,
+    unread: true,
+    time: nowIso()
+  });
+}
+
+function expireOverdueReservations(database) {
+  const expiredAt = nowIso();
+  const candidates = database.reservations.filter((reservation) => !RESOLVED_RESERVATION_STATUSES.includes(reservation.status));
+  let changed = 0;
+  for (const reservation of candidates) {
+    const payment = database.payments.find((item) => item.id === reservation.paymentId || item.reservationId === reservation.id);
+    if (payment && payment.status === "Awaiting Receipt" && !payment.paymentDeadlineAt) {
+      const resource = database.resources.find((item) => item.id === reservation.resourceId);
+      payment.paymentDeadlineHours = normalizePaymentDeadlineHours(
+        payment.paymentDeadlineHours,
+        effectivePaymentDeadlineHours(resource, database.systemSettings?.[0])
+      );
+      payment.paymentDeadlineAt = paymentDeadlineFor(reservation, payment, nowIso(), payment.paymentDeadlineHours);
+      changed += 1;
+    }
+    if (["Confirmed", "In Use"].includes(reservation.status) && reservationEndPassed(reservation)) {
+      reservation.status = "Completed";
+      reservation.completedAt = expiredAt;
+      appendNotification(database, reservation.requester, `${reservation.resourceName} was completed after its scheduled use.`);
+      database.activity.unshift({
+        id: createRecordId("ACT"),
+        action: "Reservation completed",
+        actor: "System",
+        target: reservation.resourceName,
+        details: reservation.id,
+        time: expiredAt
+      });
+      changed += 1;
+      continue;
+    }
+    const paymentExpired = reservation.status === "For Payment" && payment?.status === "Awaiting Receipt" && deadlinePassed(payment.paymentDeadlineAt);
+    const scheduleExpired = !["Confirmed", "In Use"].includes(reservation.status) && reservationEndPassed(reservation);
+    if (!paymentExpired && !scheduleExpired) {
+      if (reservation.status === "For Payment" && payment?.status === "Awaiting Receipt" && !payment.paymentReminderSentAt) {
+        payment.paymentReminderSentAt = expiredAt;
+        appendNotification(database, reservation.requester, `${reservation.resourceName} is awaiting receipt upload before ${payment.paymentDeadlineAt || "the payment deadline"}.`, "Payment");
+        changed += 1;
+      }
+      if (["Under Owner Review", "Under Additional Review", "Approved"].includes(reservation.status) && !reservation.reviewReminderSentAt) {
+        const submitted = new Date(reservation.submittedAt || reservation.createdAt || "").getTime();
+        if (Number.isFinite(submitted) && Date.now() - submitted > 24 * 60 * 60 * 1000) {
+          reservation.reviewReminderSentAt = expiredAt;
+          appendNotification(database, reservation.office, `${reservation.resourceName} has been waiting for review for more than 24 hours.`, "Approval");
+          changed += 1;
+        }
+      }
+      if (reservation.status === "Confirmed" && !reservation.upcomingReminderSentAt) {
+        const startTime = new Date(`${reservation.date}T${reservation.start || "00:00"}`).getTime();
+        if (Number.isFinite(startTime) && startTime > Date.now() && startTime - Date.now() <= 24 * 60 * 60 * 1000) {
+          reservation.upcomingReminderSentAt = expiredAt;
+          appendNotification(database, reservation.requester, `${reservation.resourceName} is scheduled within the next 24 hours.`);
+          changed += 1;
+        }
+      }
+      continue;
+    }
+    reservation.status = "Expired";
+    reservation.expiredAt = expiredAt;
+    reservation.expiryReason = paymentExpired
+      ? "Payment deadline passed before final confirmation."
+      : "Scheduled end time passed before final confirmation.";
+    reservation.approvalSteps = (reservation.approvalSteps || []).map((step) =>
+      ["Pending", "Waiting"].includes(step.status) ? { ...step, status: "Skipped" } : step
+    );
+    if (payment && ACTIVE_PAYMENT_STATUSES.includes(payment.status)) {
+        payment.status = "Expired";
+        payment.rejectionReason = "Reservation expired before final confirmation.";
+        payment.updatedAt = expiredAt;
+    }
+    appendNotification(database, reservation.requester, `${reservation.resourceName} expired because ${paymentExpired ? "the payment deadline passed" : "the scheduled time passed before final confirmation"}.`);
+    appendNotification(database, reservation.office, `${reservation.resourceName}: ${reservation.requester}'s request expired before final confirmation.`);
+    database.activity.unshift({
+      id: createRecordId("ACT"),
+      action: "Reservation expired",
+      actor: "System",
+      target: reservation.resourceName,
+      details: reservation.id,
+      time: expiredAt
+    });
+    changed += 1;
+  }
+  return changed;
+}
+
+function readLifecycleDatabase() {
+  const database = normalizeState(readDatabase());
+  if (expireOverdueReservations(database)) writeDatabase(database);
+  return database;
 }
 
 function normalizeEmail(value) {
@@ -334,7 +512,7 @@ function authenticatedUser(request) {
     throw new HttpError(401, "Please sign in to continue.");
   }
 
-  const person = readDatabase().people.find((item) => normalizeEmail(item.email) === session.email);
+  const person = readLifecycleDatabase().people.find((item) => normalizeEmail(item.email) === session.email);
   if (!person || person.status !== "Active" || !ROLE_MUTATIONS[person.role]) {
     sessions.delete(token);
     throw new HttpError(403, "This Reservata account is not active or has no supported role.");
@@ -354,6 +532,36 @@ function changedRecords(before, after, key) {
     throw new HttpError(403, `${key} records cannot be deleted through this workflow.`);
   }
   return after[key].filter((item) => !same(previous.get(item.id), item));
+}
+
+function fieldsExcept(record, allowedFields) {
+  const allowed = new Set(allowedFields);
+  return Object.fromEntries(Object.entries(record || {}).filter(([key]) => !allowed.has(key)));
+}
+
+function unchangedExcept(previous, next, allowedFields) {
+  return same(fieldsExcept(previous, allowedFields), fieldsExcept(next, allowedFields));
+}
+
+function requesterOwnsFutureActiveReservation(previous, next, user) {
+  return previous?.requester === user.name
+    && next?.requester === user.name
+    && ["Under Owner Review", "Under Additional Review", "For Payment", "Confirmed"].includes(previous.status)
+    && !reservationStartPassed(previous);
+}
+
+function isRequesterReservationChange(previous, next, user, database) {
+  if (!requesterOwnsFutureActiveReservation(previous, next, user)) return false;
+  const supportOnly = unchangedExcept(previous, next, ["supportingDocuments"]);
+  if (supportOnly) return true;
+  const cancelled = next.status === "Cancelled"
+    && unchangedExcept(previous, next, ["status", "cancelledAt", "cancelledBy", "cancellationReason", "approvalSteps"]);
+  if (cancelled) return true;
+  const rescheduled = next.status === "Under Owner Review"
+    && unchangedExcept(previous, next, ["date", "start", "end", "status", "rescheduleCount", "rescheduledAt", "approvalSteps", "paymentId"]);
+  if (!rescheduled) return false;
+  assertReservationLeadTime(next);
+  return reservationConflicts(database, next.resourceId, next.date, next.start, next.end, next.id).length === 0;
 }
 
 function assertActivityAppend(before, after, user) {
@@ -385,6 +593,16 @@ function assertScopedMutation(before, after, user, database) {
     if (after.people.some((item) => !ROLE_MUTATIONS[item.role] || !["Active", "Inactive"].includes(item.status))) {
       throw new HttpError(400, "A user has an unsupported role or account status.");
     }
+    const assetTags = new Set();
+    for (const resource of after.resources) {
+      const assetTag = normalizeAssetTag(resource.assetTag);
+      if (!assetTag) throw new HttpError(400, "Asset tag is required.");
+      if (assetTags.has(assetTag)) throw new HttpError(400, "Asset tag must be unique.");
+      assetTags.add(assetTag);
+    }
+    if (after.systemSettings.some((item) => normalizePaymentDeadlineHours(item.paymentDeadlineHours, null) === null)) {
+      throw new HttpError(400, `Payment deadline must be a whole number from ${MIN_PAYMENT_DEADLINE_HOURS} to ${MAX_PAYMENT_DEADLINE_HOURS} hours.`);
+    }
     return;
   }
 
@@ -397,6 +615,13 @@ function assertScopedMutation(before, after, user, database) {
   const reservationById = new Map(after.reservations.map((item) => [item.id, item]));
   const previousPaymentIds = new Set(before.payments.map((item) => item.id));
   const requesterNotificationTargets = new Set([user.name]);
+  const assetTags = new Set();
+  for (const resource of after.resources) {
+    const assetTag = normalizeAssetTag(resource.assetTag);
+    if (!assetTag) throw new HttpError(400, "Asset tag is required.");
+    if (assetTags.has(assetTag)) throw new HttpError(400, "Asset tag must be unique.");
+    assetTags.add(assetTag);
+  }
 
   function paymentOffice(payment) {
     return payment.office || reservationById.get(payment.reservationId)?.office;
@@ -417,9 +642,8 @@ function assertScopedMutation(before, after, user, database) {
       const existed = before.reservations.some((item) => item.id === reservation.id);
       if (existed) {
         const previous = before.reservations.find((item) => item.id === reservation.id);
-        const allowed = { ...previous, supportingDocuments: reservation.supportingDocuments };
-        if (reservation.requester !== user.name || !same(reservation, allowed)) {
-          throw new HttpError(403, "Requesters may only upload supporting documents to their own reservations.");
+        if (!isRequesterReservationChange(previous, reservation, user, full)) {
+          throw new HttpError(403, "Requesters may only update active future reservations assigned to their account.");
         }
         requesterNotificationTargets.add(reservation.office);
         continue;
@@ -527,7 +751,7 @@ function scopePredicates(database, user) {
     people: (item) => normalizeEmail(item.email) === normalizeEmail(user.email),
     offices: (item) => user.role === "Office Admin" && item.status === "Active",
     approvalTemplates: (item) => ["Requester", "Office Admin"].includes(user.role) && item.status === "Active",
-    systemSettings: () => false,
+    systemSettings: () => true,
     notifications: notificationVisible,
     activity: (item) => {
       if (["Requester", "OSG Requester"].includes(user.role)) return item.actor === user.name;
@@ -596,13 +820,13 @@ async function handleApi(request, response, url) {
 
   const user = authenticatedUser(request);
   if (pathname === "/api/state" && request.method === "GET") {
-    sendJson(response, 200, scopedState(readDatabase(), user));
+    sendJson(response, 200, scopedState(readLifecycleDatabase(), user));
     return;
   }
 
   const availabilityMatch = pathname.match(/^\/api\/resources\/([^/]+)\/availability$/);
   if (availabilityMatch && request.method === "GET") {
-    const database = normalizeState(readDatabase());
+    const database = readLifecycleDatabase();
     const resourceId = decodeURIComponent(availabilityMatch[1]);
     const resource = database.resources.find((item) => item.id === resourceId);
     const visible = resource && (
@@ -622,18 +846,20 @@ async function handleApi(request, response, url) {
   }
 
   if (pathname === "/api/state" && request.method === "PUT") {
-    const database = readDatabase();
+    const database = readLifecycleDatabase();
     const before = scopedState(database, user);
     const after = sanitizeState(await readBody(request));
     assertScopedMutation(before, after, user, database);
-    writeDatabase(mergeScopedState(database, after, user));
+    const merged = normalizeState(mergeScopedState(database, after, user));
+    expireOverdueReservations(merged);
+    writeDatabase(merged);
     sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
     return;
   }
 
   if (pathname === "/api/notifications/read" && request.method === "PATCH") {
     const body = await readBody(request);
-    const database = normalizeState(readDatabase());
+    const database = readLifecycleDatabase();
     const visibleIds = new Set(scopedState(database, user).notifications.map((item) => item.id));
     const requestedId = body.id ? String(body.id) : "";
     if (requestedId && !visibleIds.has(requestedId)) {
@@ -651,7 +877,9 @@ async function handleApi(request, response, url) {
   if (pathname === "/api/reset" && request.method === "POST") {
     if (user.role !== "Super Admin") throw new HttpError(403, "Only a Super Admin can reset demonstration data.");
     const defaultPath = path.join(ROOT, "data", "db.default.json");
-    writeDatabase(JSON.parse(fs.readFileSync(defaultPath, "utf8")));
+    const database = normalizeState(JSON.parse(fs.readFileSync(defaultPath, "utf8")));
+    expireOverdueReservations(database);
+    writeDatabase(database);
     sendJson(response, 200, { ok: true, resetAt: new Date().toISOString() });
     return;
   }

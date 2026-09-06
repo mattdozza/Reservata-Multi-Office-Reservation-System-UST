@@ -88,6 +88,70 @@ Expected result:
 
 - The next configured sequence becomes pending, or the request becomes `Confirmed`/`For Payment` when the route is complete.
 
+## TC-004A Expire Unfinished Reservations
+
+Steps:
+
+1. Seed or create a reservation whose scheduled end time has already passed while its status is still `Under Owner Review`, `Under Additional Review`, or `For Payment`.
+2. Load the reservation list or availability endpoint.
+3. Check a future availability query with an `Expired` reservation in the same time range.
+
+Expected result:
+
+- The overdue unfinished reservation changes to `Expired`.
+- Pending or waiting approval steps become `Skipped`.
+- Any awaiting payment handoff changes to `Expired`.
+- Requester and office notifications plus audit activity are created.
+- Expired reservations no longer appear in action queues, cannot accept receipts or supporting documents, and do not block availability.
+
+## TC-004B Requester Cancellation And Reschedule
+
+Steps:
+
+1. Login as Requester.
+2. Open My Requests.
+3. Cancel an active upcoming reservation with a reason.
+4. Reschedule a second active upcoming reservation to another available future time slot.
+
+Expected result:
+
+- The cancelled reservation changes to `Cancelled`, releases the time slot, and notifies the owning office.
+- The rescheduled reservation returns to `Under Owner Review`, keeps its audit trail, and no longer blocks the old slot.
+
+## TC-004C Completion, In-Use, No-Show, And Override
+
+Steps:
+
+1. Login as the owning Office Admin.
+2. Open Calendar.
+3. Mark a confirmed current reservation `In Use`, then `Completed`.
+4. Mark a confirmed reservation whose start time has passed as `No Show` with a reason.
+5. Manually cancel or expire an active reservation with a reason.
+
+Expected result:
+
+- Attendance states are reflected in the calendar and reservation history.
+- Completed/no-show/cancelled/expired reservations stop blocking availability.
+- Requester notifications and audit records are created for every lifecycle action.
+
+## TC-004D Payment Deadline And Reminders
+
+Steps:
+
+1. Approve a fee-required reservation until it reaches `For Payment`.
+2. As Super Admin, change the default payment window and confirm the setting persists after reload.
+3. As Office Admin, set a paid resource payment-window override, or leave it blank to use the default.
+4. Verify the payment handoff includes the effective deadline window.
+5. Let the deadline pass without receipt upload, or seed an overdue payment deadline.
+6. Load the reservation list.
+
+Expected result:
+
+- Awaiting receipt payments past the deadline change to `Expired`.
+- The linked reservation changes to `Expired`.
+- Requester reminder notifications are created before expiry.
+- Invalid payment windows below 1 hour or above 168 hours are rejected.
+
 ## TC-005 Payment Verification
 
 Steps:
@@ -265,14 +329,17 @@ Expected result:
 Steps:
 
 1. Sign in as an Office Admin and open Office Settings.
-2. Add a resource with a workflow assignment.
-3. Edit its status, capacity, fee, or workflow.
-4. Archive it, then edit it back to `Available`.
+2. Add a resource and confirm the asset tag is generated automatically.
+3. Edit the suggested asset tag if the office needs a specific inventory code, then add an optional serial number, comma-separated labels, and a workflow assignment.
+4. Edit its status, capacity, fee, payment window, asset tag, labels, or workflow.
+5. Search the resource list by asset tag, serial number, or label.
+6. Archive it, then edit it back to `Available`.
 
 Expected result:
 
 - Changes persist and create audit entries.
 - The resource always remains assigned to the administrator's office.
+- Duplicate asset tags are rejected.
 - Archived resources are unavailable to requesters but remain available for audit and restoration.
 
 ## TC-018 Super Admin Maintenance

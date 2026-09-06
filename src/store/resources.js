@@ -1,6 +1,6 @@
 import { awsApi } from "../awsApi.js";
 import { nextId } from "../utils.js";
-import { validPositiveNumber } from "./shared.js";
+import { BLOCKING_RESERVATION_STATUSES, generateAssetTag, normalizeAssetTag, normalizeResourceTags, requirePaymentDeadlineHours, validPositiveNumber } from "./shared.js";
 
 export const resourceMethods = {
   get officeResources() {
@@ -32,19 +32,30 @@ export const resourceMethods = {
     if (!String(values.name || "").trim() || !String(values.location || "").trim()) {
       throw new Error("Resource name and location are required.");
     }
+    const type = values.type || existing?.type || "Equipment";
+    const assetTag = normalizeAssetTag(values.assetTag || generateAssetTag(this.data.resources, this.officeScope, type, existing?.id));
+    if (this.data.resources.some((item) => item.id !== existing?.id && normalizeAssetTag(item.assetTag) === assetTag)) {
+      throw new Error("Asset tag must be unique.");
+    }
     const template = this.data.approvalTemplates.find((item) => item.id === values.workflowTemplateId && item.status === "Active");
     if (!template) throw new Error("Select an active approval workflow.");
     const resource = {
       ...(existing || {}),
       id: existing?.id || nextId("R", this.data.resources),
+      assetTag,
       name: String(values.name).trim(),
-      type: values.type,
+      type,
       office: this.officeScope,
       location: String(values.location).trim(),
+      serialNumber: String(values.serialNumber || "").trim(),
+      tags: normalizeResourceTags(values.tags),
       capacity: validPositiveNumber(values.capacity || 1, "Capacity"),
       status: values.status || "Available",
       requiresPayment: Boolean(values.requiresPayment),
       fee: values.requiresPayment ? validPositiveNumber(values.fee || 0, "Fee", 0) : 0,
+      paymentDeadlineHours: values.requiresPayment && String(values.paymentDeadlineHours ?? "").trim()
+        ? requirePaymentDeadlineHours(values.paymentDeadlineHours, "Payment window")
+        : null,
       driver: values.type === "Vehicle" ? (values.driver || "Without Driver") : "Not applicable",
       workflowTemplateId: template.id
     };
@@ -62,7 +73,7 @@ export const resourceMethods = {
     const resource = this.data.resources.find((item) => item.id === id);
     this.requireOfficeRecord(resource);
     const hasOpenReservations = this.data.reservations.some((item) =>
-      item.resourceId === id && !["Rejected", "Cancelled", "Completed"].includes(item.status)
+      item.resourceId === id && !["Rejected", "Cancelled", "Completed", "Expired", "No Show"].includes(item.status)
     );
     if (hasOpenReservations) throw new Error("This resource has an active reservation and cannot be archived.");
     const previousData = this.snapshot();
@@ -75,14 +86,18 @@ export const resourceMethods = {
     this.requireRole("officeAdmin");
     const previousData = this.snapshot();
     const id = nextId("R", this.data.resources);
+    const type = "Equipment";
     const resource = {
       id,
+      assetTag: generateAssetTag(this.data.resources, this.officeScope, type),
       name: `Sample Resource ${this.data.resources.length + 1}`,
-      type: "Equipment",
+      type,
       office: this.currentUser.office.replace(" Office", ""),
       location: "Office Inventory",
       capacity: 1,
       status: "Available",
+      serialNumber: "",
+      tags: ["Sample", "Equipment"],
       requiresPayment: false,
       driver: "Not applicable"
     };

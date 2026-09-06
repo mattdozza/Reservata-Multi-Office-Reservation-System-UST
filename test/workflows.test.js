@@ -1,6 +1,27 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+function installStorage() {
+  const storage = new Map();
+  global.localStorage = {
+    getItem: (key) => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key)
+  };
+  global.sessionStorage = {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {}
+  };
+}
+
+function daysFromTodayIso(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
 test("venue workflow activates conditional reviews in parallel before payment", async () => {
   const { buildApprovalSteps, decideApprovalStep } = await import("../src/workflows.js");
   const template = {
@@ -228,6 +249,217 @@ test("requesters can attach supporting documents to their reservations", async (
   assert.ok(store.data.activity.some((item) => item.action === "Supporting document uploaded"));
 });
 
+test("requesters can cancel and reschedule active upcoming reservations", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "Student Body Requester",
+    role: "Requester",
+    office: "Student Body",
+    email: "student.body.requester@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({
+    resources: [{ id: "R-1", name: "Projector", type: "Equipment", office: "EdTech", status: "Available", capacity: 1 }],
+    reservations: [
+      {
+        id: "REQ-CANCEL",
+        requester: "Student Body Requester",
+        resourceId: "R-1",
+        resourceName: "Projector",
+        office: "EdTech",
+        date: daysFromTodayIso(3),
+        start: "09:00",
+        end: "10:00",
+        status: "Under Owner Review",
+        approvalSteps: [{ id: "REQ-CANCEL-OWNER", office: "EdTech", sequence: 1, status: "Pending" }]
+      },
+      {
+        id: "REQ-RESCHEDULE",
+        requester: "Student Body Requester",
+        resourceId: "R-1",
+        resourceName: "Projector",
+        office: "EdTech",
+        date: daysFromTodayIso(4),
+        start: "09:00",
+        end: "10:00",
+        status: "Confirmed",
+        approvalSteps: [{ id: "REQ-RESCHEDULE-OWNER", office: "EdTech", sequence: 1, status: "Approved" }]
+      }
+    ]
+  });
+
+  await store.cancelReservation("REQ-CANCEL", "Schedule no longer needed");
+  assert.equal(store.data.reservations.find((item) => item.id === "REQ-CANCEL").status, "Cancelled");
+
+  await store.rescheduleReservation("REQ-RESCHEDULE", { date: daysFromTodayIso(6), start: "13:00", end: "14:00" });
+  const rescheduled = store.data.reservations.find((item) => item.id === "REQ-RESCHEDULE");
+  assert.equal(rescheduled.status, "Under Owner Review");
+  assert.equal(rescheduled.start, "13:00");
+  assert.equal(rescheduled.approvalSteps[0].status, "Pending");
+});
+
+test("reservation lifecycle completes confirmed bookings and expires payment deadlines", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "Student Body Requester",
+    role: "Requester",
+    office: "Student Body",
+    email: "student.body.requester@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({
+    reservations: [
+      {
+        id: "REQ-COMPLETE",
+        requester: "Student Body Requester",
+        resourceId: "R-1",
+        resourceName: "Projector",
+        office: "EdTech",
+        date: daysFromTodayIso(-1),
+        start: "09:00",
+        end: "10:00",
+        status: "Confirmed"
+      },
+      {
+        id: "REQ-PAY-DEADLINE",
+        requester: "Student Body Requester",
+        resourceId: "R-2",
+        resourceName: "Auditorium",
+        office: "Simbahayan",
+        date: daysFromTodayIso(3),
+        start: "09:00",
+        end: "10:00",
+        status: "For Payment",
+        paymentId: "PAY-DEADLINE",
+        requiresPayment: true
+      }
+    ],
+    payments: [{ id: "PAY-DEADLINE", reservationId: "REQ-PAY-DEADLINE", status: "Awaiting Receipt", paymentDeadlineAt: daysFromTodayIso(-1) }]
+  });
+
+  assert.equal(store.data.reservations.find((item) => item.id === "REQ-COMPLETE").status, "Completed");
+  assert.equal(store.data.reservations.find((item) => item.id === "REQ-PAY-DEADLINE").status, "Expired");
+  assert.equal(store.data.payments.find((item) => item.id === "PAY-DEADLINE").status, "Expired");
+});
+
+test("payment handoff snapshots the configured resource deadline window", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "EdTech Office Admin",
+    role: "Office Admin",
+    office: "EdTech",
+    email: "edtech.admin@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({
+    systemSettings: [{ id: "SYSTEM", paymentDeadlineHours: 24 }],
+    resources: [{ id: "R-PAID", name: "Training Room", type: "Facility", office: "EdTech", status: "Available", capacity: 40, requiresPayment: true, fee: 500, paymentDeadlineHours: 6, workflowTemplateId: "WF-BASIC" }],
+    reservations: [{
+      id: "REQ-PAID",
+      requester: "Student Body Requester",
+      resourceId: "R-PAID",
+      resourceName: "Training Room",
+      office: "EdTech",
+      date: daysFromTodayIso(3),
+      start: "09:00",
+      end: "10:00",
+      status: "Under Owner Review",
+      requiresPayment: true,
+      approvalSteps: [{ id: "REQ-PAID-OWNER", name: "Resource Owner Review", office: "EdTech", sequence: 1, status: "Pending" }]
+    }]
+  });
+
+  await store.approveReservation("REQ-PAID", "REQ-PAID-OWNER");
+
+  const payment = store.data.payments.find((item) => item.reservationId === "REQ-PAID");
+  assert.equal(payment.paymentDeadlineHours, 6);
+  assert.equal(store.data.reservations.find((item) => item.id === "REQ-PAID").status, "For Payment");
+});
+
+test("office admin gets generated asset tags and can save searchable labels", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "EdTech Office Admin",
+    role: "Office Admin",
+    office: "EdTech",
+    email: "edtech.admin@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({
+    resources: [{ id: "R-EXISTING", assetTag: "EDTECH-PROJ-001", name: "Projector", type: "Equipment", office: "EdTech", status: "Available", capacity: 1, workflowTemplateId: "WF-BASIC" }],
+    approvalTemplates: [{ id: "WF-BASIC", name: "Basic Resource Approval", status: "Active", steps: [{ id: "OWNER", name: "Owner Review", office: "$OWNER", sequence: 1, condition: "always" }] }]
+  });
+
+  await store.saveResource({
+    assetTag: "",
+    name: "Loaner Laptop",
+    type: "Equipment",
+    location: "CICS Stockroom",
+    serialNumber: "SN-002",
+    tags: "Laptop, Loaner, Laptop",
+    capacity: 1,
+    status: "Available",
+    requiresPayment: false,
+    workflowTemplateId: "WF-BASIC"
+  });
+
+  const resource = store.data.resources.find((item) => item.name === "Loaner Laptop");
+  assert.equal(resource.assetTag, "EDTECH-EQP-001");
+  assert.deepEqual(resource.tags, ["Laptop", "Loaner"]);
+  assert.equal(resource.serialNumber, "SN-002");
+
+  await assert.rejects(() => store.saveResource({
+    assetTag: "EDTECH-PROJ-001",
+    name: "Duplicate Projector",
+    type: "Equipment",
+    location: "CICS Lab",
+    capacity: 1,
+    status: "Available",
+    requiresPayment: false,
+    workflowTemplateId: "WF-BASIC"
+  }), /Asset tag must be unique/);
+});
+
+test("owning office can manage confirmed reservation attendance states", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "EdTech Office Admin",
+    role: "Office Admin",
+    office: "EdTech",
+    email: "edtech.admin@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({
+    reservations: [
+      { id: "REQ-IN-USE", requester: "Student Body Requester", resourceName: "Projector", office: "EdTech", date: daysFromTodayIso(0), start: "00:01", end: "23:59", status: "Confirmed" },
+      { id: "REQ-NO-SHOW", requester: "Student Body Requester", resourceName: "Laptop", office: "EdTech", date: daysFromTodayIso(0), start: "00:01", end: "23:59", status: "Confirmed" }
+    ]
+  });
+
+  await store.updateReservationLifecycleStatus("REQ-IN-USE", "In Use");
+  assert.equal(store.data.reservations.find((item) => item.id === "REQ-IN-USE").status, "In Use");
+  await store.updateReservationLifecycleStatus("REQ-IN-USE", "Completed");
+  assert.equal(store.data.reservations.find((item) => item.id === "REQ-IN-USE").status, "Completed");
+
+  await store.updateReservationLifecycleStatus("REQ-NO-SHOW", "No Show", "Requester did not arrive");
+  assert.equal(store.data.reservations.find((item) => item.id === "REQ-NO-SHOW").status, "No Show");
+});
+
 test("super admin can provision a valid UST SSO email", async () => {
   const storage = new Map();
   global.localStorage = {
@@ -304,4 +536,24 @@ test("super admin can manage additional requirement options", async () => {
   await store.archiveRequirementOption("cateringRequired");
   assert.ok(!store.requirementOptions.some((item) => item.id === "cateringRequired"));
   assert.ok(store.allRequirementOptions.some((item) => item.id === "cateringRequired" && item.status === "Archived"));
+});
+
+test("super admin can update the default payment deadline window", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "All Offices Super Admin",
+    role: "Super Admin",
+    office: "All Offices",
+    email: "all.offices.admin@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({ systemSettings: [{ id: "SYSTEM", paymentDeadlineHours: 24 }] });
+
+  await store.updatePaymentDeadlineSettings(48);
+
+  assert.equal(store.settings.paymentDeadlineHours, 48);
+  await assert.rejects(() => store.updatePaymentDeadlineSettings(200), /whole number from 1 to 168/);
 });

@@ -37,6 +37,7 @@ Globals:
         USERS_TABLE: !Ref UsersTable
         OFFICES_TABLE: !Ref OfficesTable
         APPROVAL_WORKFLOWS_TABLE: !Ref ApprovalWorkflowsTable
+        SYSTEM_SETTINGS_TABLE: !Ref SystemSettingsTable
         NOTIFICATIONS_TABLE: !Ref NotificationsTable
         ACTIVITY_TABLE: !Ref ActivityTable
         RECEIPTS_BUCKET: !Ref ReceiptsBucket
@@ -81,13 +82,15 @@ Resources:
       Handler: src/handlers/bootstrap.handler
       Policies:
         - DynamoDBReadPolicy: { TableName: !Ref ResourcesTable }
-        - DynamoDBReadPolicy: { TableName: !Ref ReservationsTable }
-        - DynamoDBReadPolicy: { TableName: !Ref PaymentsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationLocksTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref PaymentsTable }
         - DynamoDBReadPolicy: { TableName: !Ref VisitorsTable }
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
         - DynamoDBReadPolicy: { TableName: !Ref OfficesTable }
-        - DynamoDBReadPolicy: { TableName: !Ref NotificationsTable }
-        - DynamoDBReadPolicy: { TableName: !Ref ActivityTable }
+        - DynamoDBReadPolicy: { TableName: !Ref SystemSettingsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
         - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
       Events:
         Bootstrap:
@@ -124,11 +127,15 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
         - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref SystemSettingsTable }
         - S3WritePolicy: { BucketName: !Ref ReceiptsBucket }
       Events:
         ListReservations: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /reservations, Method: GET } }
         CreateReservation: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /reservations, Method: POST } }
         DecideReservation: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/decision", Method: PATCH } }
+        CancelReservation: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/cancel", Method: PATCH } }
+        RescheduleReservation: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/reschedule", Method: PATCH } }
+        UpdateReservationStatus: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/status", Method: PATCH } }
         ResourceAvailability: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}/availability", Method: GET } }
         DocumentUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/document-upload", Method: POST } }
 
@@ -176,6 +183,7 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref ResourcesTable }
         - DynamoDBCrudPolicy: { TableName: !Ref OfficesTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref SystemSettingsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
       Events:
@@ -189,6 +197,8 @@ Resources:
         ListWorkflows: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /workflows, Method: GET } }
         CreateWorkflow: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /workflows, Method: POST } }
         UpdateWorkflow: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/workflows/{id}", Method: PATCH } }
+        GetSettings: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /settings, Method: GET } }
+        UpdateSettings: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /settings, Method: PATCH } }
         ListNotifications: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /notifications, Method: GET } }
         ReadNotifications: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /notifications/read, Method: PATCH } }
         ListActivity: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /activity, Method: GET } }
@@ -246,6 +256,20 @@ Resources:
       GlobalSecondaryIndexes:
         - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
         - { IndexName: requester-index, KeySchema: [{ AttributeName: requesterEmail, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  SystemSettingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
       Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]

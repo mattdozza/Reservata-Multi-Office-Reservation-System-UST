@@ -28,6 +28,7 @@ All AWS endpoints require `Authorization: Bearer <University JWT>`. API Gateway 
 | PATCH | `/offices/{id}` | Rename, activate, or archive an office as Super Admin |
 | GET/POST | `/workflows` | List or create approval workflows as Super Admin |
 | PATCH | `/workflows/{id}` | Edit or archive an approval workflow as Super Admin |
+| GET/PATCH | `/settings` | Read or update system settings as Super Admin |
 | GET | `/notifications` | List the authenticated user's notifications |
 | PATCH | `/notifications/read` | Mark the authenticated user's notifications read |
 | GET | `/activity` | List the audit trail within role scope |
@@ -63,7 +64,15 @@ Restores the authenticated account for a valid session token.
 
 ## GET `/api/resources/{id}/availability`
 
-Returns availability for a selected resource, date, and time range using the full local database while keeping other requesters' reservation details private. The response includes the selected slot status, unavailable conflicts with only schedule/status metadata, available and unavailable slots for the selected date, and suggested alternative slots.
+Returns availability for a selected resource, date, and time range using the full local database while keeping other requesters' reservation details private. The response includes the selected slot status, unavailable conflicts with only schedule/status metadata, available and unavailable slots for the selected date, and suggested alternative slots. Expired reservations are excluded from conflict checks.
+
+Reservation lifecycle actions in AWS mode:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| PATCH | `/reservations/{id}/cancel` | Requester cancellation for an active upcoming reservation |
+| PATCH | `/reservations/{id}/reschedule` | Requester schedule change that sends the request back to owner review |
+| PATCH | `/reservations/{id}/status` | Owning Office Admin/Super Admin lifecycle update for `In Use`, `Completed`, `No Show`, `Cancelled`, or `Expired` |
 
 ## POST `/api/auth/logout`
 
@@ -100,6 +109,7 @@ Used after changes such as:
 - arrival check-in
 - account role/access updates
 - office, resource, and approval-workflow maintenance
+- payment deadline and additional-requirement settings
 
 ## POST `/api/reset`
 

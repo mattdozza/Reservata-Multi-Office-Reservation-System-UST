@@ -14,7 +14,17 @@
 10. Owner approval activates the next sequence. Steps with the same sequence run in parallel, so separate support offices do not wait on one another unnecessarily.
 11. Each office sees and decides only its pending assigned steps. A rejection stops the route, marks later waiting steps `Skipped`, and releases the reservation's held slot.
 12. When all operational steps are approved, a free reservation becomes `Confirmed`; a fee-required reservation becomes `For Payment`.
-13. The requester uploads a receipt. The resource-owning Office Admin verifies it and the request becomes `Confirmed`.
+13. The requester uploads a receipt before the payment deadline. The deadline uses the paid resource's payment-window override when present, otherwise the Super Admin default, and is capped by the reservation start time. The resource-owning Office Admin verifies the receipt and the request becomes `Confirmed`.
+14. A requester may cancel or reschedule an active upcoming request. Cancellation releases the slot. Rescheduling releases the previous slot, reserves the new slot, and sends the request back to owner review.
+15. If the scheduled end time or payment deadline passes before final confirmation, Reservata marks the request `Expired`, skips remaining pending/waiting approval steps, removes it from action queues, notifies the requester and resource-owning office, and releases the time slot for future reservations.
+16. Confirmed reservations become `In Use` when the owning office starts the reservation, then `Completed` after use. Confirmed reservations that pass their start time without attendance can be marked `No Show`.
+17. Owning Office Admins and Super Admins may manually cancel or expire active reservations with a required reason for emergencies, mistakes, or office closures.
+
+Reminder behavior:
+
+- Requesters are reminded when payment is awaiting a receipt.
+- Requesters are reminded when a confirmed reservation is scheduled within 24 hours.
+- Offices are reminded when a review has been waiting longer than 24 hours.
 
 Example venue route:
 
@@ -32,7 +42,7 @@ Requester submission
 
 1. Opens Office Settings.
 2. Adds or edits resources owned by the assigned office.
-3. Maintains resource type, location, capacity, availability, fee, and approval-workflow assignment.
+3. Maintains resource asset tag, serial number, searchable labels, type, location, capacity, availability, fee, payment-window override, and approval-workflow assignment.
 4. Archives records instead of physically deleting them, preserving reservation and audit references.
 5. May restore an archived resource by editing its status.
 
@@ -43,7 +53,8 @@ Requester submission
 3. Creates approval workflows with an owner step plus supporting-office steps.
 4. Configures step sequence and conditions. Equal sequence values run in parallel.
 5. Edits or archives unused workflow templates. Existing reservations retain their snapshotted route.
-6. Reviews system-wide coverage and audit activity.
+6. Sets the default payment-expiration window for paid reservations.
+7. Reviews system-wide coverage and audit activity.
 
 ## OSG Visitor Flow
 

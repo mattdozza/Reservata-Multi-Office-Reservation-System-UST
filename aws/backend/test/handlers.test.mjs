@@ -10,6 +10,7 @@ Object.assign(process.env, {
   USERS_TABLE: "Users",
   OFFICES_TABLE: "Offices",
   APPROVAL_WORKFLOWS_TABLE: "ApprovalWorkflows",
+  SYSTEM_SETTINGS_TABLE: "SystemSettings",
   NOTIFICATIONS_TABLE: "Notifications",
   ACTIVITY_TABLE: "Activity",
   RECEIPTS_BUCKET: "Receipts"
@@ -44,6 +45,45 @@ test("Office Admin resource listing is constrained to the assigned office", asyn
   const response = await createResourceHandler(repo)(event("GET", "admin@ust.edu.ph"));
   assert.equal(response.statusCode, 200);
   assert.deepEqual(calls, [{ table: "Resources", index: "office-index", key: "office", value: "Simbahayan" }]);
+});
+
+test("Office Admin can create resources with generated unique asset tags", async () => {
+  let transaction;
+  const repo = {
+    async get(table) {
+      if (table === "Users") return { email: "admin@ust.edu.ph", name: "Admin", office: "EdTech", role: "Office Admin", status: "Active" };
+      if (table === "ApprovalWorkflows") return { id: "WF-BASIC", name: "Basic", status: "Active" };
+      return null;
+    },
+    async scan(table) {
+      assert.equal(table, "Resources");
+      return [{ id: "R-1", assetTag: "EDTECH-PROJ-001" }];
+    },
+    async transact(items) { transaction = items; }
+  };
+
+  const created = await createResourceHandler(repo)(event("POST", "admin@ust.edu.ph", {
+    name: "Loaner Laptop",
+    type: "Equipment",
+    location: "CICS Stockroom",
+    serialNumber: "SN-002",
+    tags: "Laptop, Loaner, Laptop",
+    capacity: 1,
+    requiresPayment: false,
+    workflowTemplateId: "WF-BASIC"
+  }, {}, "/resources"));
+  assert.equal(created.statusCode, 201);
+  assert.equal(transaction[0].Put.Item.assetTag, "EDTECH-EQP-001");
+  assert.deepEqual(transaction[0].Put.Item.tags, ["Laptop", "Loaner"]);
+
+  const duplicate = await createResourceHandler(repo)(event("POST", "admin@ust.edu.ph", {
+    assetTag: "EDTECH-PROJ-001",
+    name: "Duplicate Projector",
+    type: "Equipment",
+    location: "CICS Lab",
+    capacity: 1
+  }, {}, "/resources"));
+  assert.equal(duplicate.statusCode, 409);
 });
 
 test("Requester submission creates reservation, notification, and activity atomically", async () => {
@@ -212,5 +252,33 @@ test("only Super Admin can provision SSO user accounts", async () => {
   assert.equal(transaction[0].Put.TableName, "Users");
   assert.equal(transaction[0].Put.ConditionExpression, "attribute_not_exists(email)");
   assert.deepEqual(transaction[0].Put.Item.email, "new.admin@ust.edu.ph");
+  assert.equal(transaction[1].Put.TableName, "Activity");
+});
+
+test("only Super Admin can update payment deadline settings", async () => {
+  const deniedRepo = {
+    async get(table) {
+      if (table === "Users") return { email: "admin@ust.edu.ph", name: "Admin", office: "Simbahayan", role: "Office Admin", status: "Active" };
+      return null;
+    }
+  };
+  const denied = await createAdminHandler(deniedRepo)(event("PATCH", "admin@ust.edu.ph", { paymentDeadlineHours: 36 }, {}, "/settings"));
+  assert.equal(denied.statusCode, 403);
+
+  let transaction;
+  const allowedRepo = {
+    async get(table) {
+      if (table === "Users") return { email: "super@ust.edu.ph", name: "Super", office: "All Offices", role: "Super Admin", status: "Active" };
+      if (table === "SystemSettings") return { id: "SYSTEM", paymentDeadlineHours: 24, requirementOptions: [] };
+      return null;
+    },
+    async transact(items) { transaction = items; }
+  };
+  const allowed = await createAdminHandler(allowedRepo)(event("PATCH", "super@ust.edu.ph", { paymentDeadlineHours: 36, requirementOptions: [] }, {}, "/settings"));
+  assert.equal(allowed.statusCode, 200);
+  const body = JSON.parse(allowed.body);
+  assert.equal(body.paymentDeadlineHours, 36);
+  assert.equal(transaction[0].Put.TableName, "SystemSettings");
+  assert.equal(transaction[0].Put.Item.id, "SYSTEM");
   assert.equal(transaction[1].Put.TableName, "Activity");
 });

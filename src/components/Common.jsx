@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Info, Upload, X } from "lucide-react";
-import { badgeClass, displayTimestamp, formatDate } from "../utils.js";
+import { badgeClass, displayTimestamp, formatDate, tomorrowIso } from "../utils.js";
 import { approvalProgress } from "../workflows.js";
 
 export function Badge({ status, children, className = "" }) {
@@ -136,7 +136,7 @@ function ReservationDetails({ store, reservation }) {
         ["Resource", reservation.resourceName],
         ["Office", reservation.office],
         ["Schedule", `${formatDate(reservation.date)} ${reservation.start}-${reservation.end}`],
-        ["Warning", store.isReservationOverdue(reservation) ? "Scheduled time has passed without final confirmation or rejection." : "None"],
+        ["Warning", reservation.status === "Expired" ? "Reservation expired because the scheduled time passed before final confirmation." : store.isReservationOverdue(reservation) ? "Scheduled time has passed without final confirmation or rejection." : "None"],
         ["Quantity / attendees", reservation.quantity],
         ["Payment", reservation.requiresPayment ? payment?.status || "Required" : "Not required"],
         ["Decision reason", reservation.rejectionReason || "None"],
@@ -209,10 +209,71 @@ export function ReceiptPreview({ payment }) {
   return <img className="receipt-preview receipt-image" src={payment.receiptPreview} alt={`${payment.id} receipt preview`} />;
 }
 
-export function ReservationRows({ store, items, onUpload, onDocumentUpload }) {
+function isUpcoming(reservation) {
+  return new Date(`${reservation.date}T${reservation.start || "00:00"}`).getTime() > Date.now();
+}
+
+function requesterCanChange(reservation) {
+  return ["Under Owner Review", "Under Additional Review", "For Payment", "Confirmed"].includes(reservation.status) && isUpcoming(reservation);
+}
+
+function ReasonPromptModal({ title, message, confirmLabel, details, onConfirm, onCancel }) {
+  const [reason, setReason] = useState("");
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onCancel}>
+      <section className="modal-panel confirm-panel" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="confirm-heading">
+          <div className="confirm-icon confirm-danger" aria-hidden="true"><AlertTriangle size={22} /></div>
+          <CardHeader title={title} subtitle={message} />
+        </div>
+        <div className="confirm-details">
+          {details.map(([label, value]) => (
+            <div key={label}><span>{label}</span><strong>{value}</strong></div>
+          ))}
+        </div>
+        <label className="field reason-field">
+          <span>Reason / comment</span>
+          <textarea className="textarea" value={reason} onChange={(event) => setReason(event.target.value)} minLength="8" required />
+        </label>
+        <div className="confirm-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
+          <button className="danger-button" onClick={() => onConfirm(reason)} disabled={reason.trim().length < 8} type="button">{confirmLabel}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RescheduleModal({ item, onConfirm, onCancel }) {
+  const [slot, setSlot] = useState({ date: item.date || tomorrowIso(), start: item.start || "08:00", end: item.end || "09:00" });
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onCancel}>
+      <section className="modal-panel confirm-panel" role="dialog" aria-modal="true" aria-label="Reschedule reservation" onMouseDown={(event) => event.stopPropagation()}>
+        <CardHeader title="Reschedule reservation" subtitle="The request will return to owner review after the schedule changes." />
+        <div className="confirm-details">
+          <div><span>Request</span><strong>{item.resourceName}</strong></div>
+          <div><span>Current schedule</span><strong>{formatDate(item.date)} {item.start}-{item.end}</strong></div>
+        </div>
+        <div className="form-grid">
+          <div className="field"><label htmlFor={`reschedule-date-${item.id}`}>Date</label><input id={`reschedule-date-${item.id}`} className="input" type="date" min={tomorrowIso()} value={slot.date} onChange={(event) => setSlot((current) => ({ ...current, date: event.target.value }))} required /></div>
+          <div className="field"><label htmlFor={`reschedule-start-${item.id}`}>Start time</label><input id={`reschedule-start-${item.id}`} className="input" type="time" value={slot.start} onChange={(event) => setSlot((current) => ({ ...current, start: event.target.value }))} required /></div>
+          <div className="field"><label htmlFor={`reschedule-end-${item.id}`}>End time</label><input id={`reschedule-end-${item.id}`} className="input" type="time" value={slot.end} onChange={(event) => setSlot((current) => ({ ...current, end: event.target.value }))} required /></div>
+        </div>
+        <div className="confirm-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
+          <button className="primary-button" onClick={() => onConfirm(slot)} disabled={!slot.date || !slot.start || !slot.end || slot.start >= slot.end} type="button">Request Reschedule</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function ReservationRows({ store, items, onUpload, onDocumentUpload, onCancel, onReschedule }) {
   const [selected, setSelected] = useState(null);
   const [pendingReceipt, setPendingReceipt] = useState(null);
   const [pendingDocument, setPendingDocument] = useState(null);
+  const [cancellation, setCancellation] = useState(null);
+  const [reschedule, setReschedule] = useState(null);
   if (!items.length) return <EmptyState>No reservation requests yet.</EmptyState>;
 
   return (
@@ -231,7 +292,13 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload }) {
           </div>
           <div className="split-actions">
             <button className="secondary-button" onClick={() => setSelected(item)} type="button">View Details</button>
-            {store.session.activeRole === "requester" && !["Rejected", "Cancelled", "Completed"].includes(item.status) && onDocumentUpload && (
+            {store.session.activeRole === "requester" && requesterCanChange(item) && onReschedule && (
+              <button className="secondary-button" onClick={() => setReschedule(item)} type="button">Reschedule</button>
+            )}
+            {store.session.activeRole === "requester" && requesterCanChange(item) && onCancel && (
+              <button className="secondary-button" onClick={() => setCancellation(item)} type="button">Cancel</button>
+            )}
+            {store.session.activeRole === "requester" && !["Rejected", "Cancelled", "Completed", "Expired", "No Show"].includes(item.status) && onDocumentUpload && (
               <label className="secondary-button file-button">
                 Upload Document
                 <input
@@ -330,6 +397,34 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload }) {
             </div>
           </div>
         </DetailModal>
+      )}
+      {cancellation && (
+        <ReasonPromptModal
+          title="Cancel this reservation?"
+          message="This closes the request, releases the schedule, and notifies the resource-owning office."
+          confirmLabel="Cancel Reservation"
+          details={[
+            ["Request", cancellation.resourceName],
+            ["Schedule", `${formatDate(cancellation.date)} ${cancellation.start}-${cancellation.end}`]
+          ]}
+          onCancel={() => setCancellation(null)}
+          onConfirm={async (reason) => {
+            const current = cancellation;
+            setCancellation(null);
+            await onCancel(current.id, reason);
+          }}
+        />
+      )}
+      {reschedule && (
+        <RescheduleModal
+          item={reschedule}
+          onCancel={() => setReschedule(null)}
+          onConfirm={async (slot) => {
+            const current = reschedule;
+            setReschedule(null);
+            await onReschedule(current.id, slot);
+          }}
+        />
       )}
     </>
   );

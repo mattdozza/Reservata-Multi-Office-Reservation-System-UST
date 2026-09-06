@@ -1,8 +1,13 @@
 import { todayIso, tomorrowIso } from "../utils.js";
 import { REQUIREMENT_OPTIONS } from "../workflows.js";
 
-export const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment"];
-export const RESOLVED_RESERVATION_STATUSES = ["Confirmed", "Rejected", "Cancelled", "Completed"];
+export const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment", "In Use"];
+export const RESOLVED_RESERVATION_STATUSES = ["Rejected", "Cancelled", "Completed", "Expired", "No Show"];
+export const ACTIVE_PAYMENT_STATUSES = ["Awaiting Receipt", "Pending Verification"];
+export const CLOSED_PAYMENT_STATUSES = ["Verified", "Rejected", "Cancelled", "Expired"];
+export const DEFAULT_PAYMENT_DEADLINE_HOURS = 24;
+export const MIN_PAYMENT_DEADLINE_HOURS = 1;
+export const MAX_PAYMENT_DEADLINE_HOURS = 168;
 export const MAX_RECEIPT_PREVIEW_BYTES = 700_000;
 export const BUSINESS_DAY_START = 8 * 60;
 export const BUSINESS_DAY_END = 17 * 60;
@@ -10,6 +15,50 @@ export const DEFAULT_SLOT_MINUTES = 60;
 
 export function cleanText(value) {
   return String(value || "").trim();
+}
+
+export function normalizeAssetTag(value) {
+  return cleanText(value).toUpperCase().replace(/[^A-Z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+export function assetTagPrefix(office, type) {
+  const officeWords = cleanText(office).toUpperCase().match(/[A-Z0-9]+/g) || ["OFFICE"];
+  const officeCode = officeWords.length > 1
+    ? officeWords.map((word) => word.slice(0, 3)).join("").slice(0, 8)
+    : officeWords[0].slice(0, 6);
+  const typeCodes = {
+    Facility: "FAC",
+    Vehicle: "VEH",
+    Equipment: "EQP",
+    "Visitor Service": "VIS"
+  };
+  return `${officeCode || "OFFICE"}-${typeCodes[type] || "RES"}`;
+}
+
+export function generateAssetTag(resources = [], office = "", type = "Equipment", excludeId = "") {
+  const prefix = assetTagPrefix(office, type);
+  const numbers = resources
+    .filter((resource) => resource.id !== excludeId)
+    .map((resource) => normalizeAssetTag(resource.assetTag || ""))
+    .filter((assetTag) => assetTag.startsWith(`${prefix}-`))
+    .map((assetTag) => Number(assetTag.slice(prefix.length + 1)))
+    .filter(Number.isInteger);
+  let nextNumber = Math.max(0, ...numbers) + 1;
+  let candidate = `${prefix}-${String(nextNumber).padStart(3, "0")}`;
+  const used = new Set(resources.filter((resource) => resource.id !== excludeId).map((resource) => normalizeAssetTag(resource.assetTag || "")));
+  while (used.has(candidate)) {
+    nextNumber += 1;
+    candidate = `${prefix}-${String(nextNumber).padStart(3, "0")}`;
+  }
+  return candidate;
+}
+
+export function normalizeResourceTags(value) {
+  const source = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(source
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+    .map((item) => item.slice(0, 32)))].slice(0, 8);
 }
 
 export function requireText(value, label, minimum = 1) {
@@ -37,6 +86,29 @@ export function validPositiveNumber(value, label, minimum = 1) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < minimum) throw new Error(`${label} must be at least ${minimum}.`);
   return number;
+}
+
+export function normalizePaymentDeadlineHours(value, fallback = DEFAULT_PAYMENT_DEADLINE_HOURS) {
+  const number = Number(value);
+  if (Number.isInteger(number) && number >= MIN_PAYMENT_DEADLINE_HOURS && number <= MAX_PAYMENT_DEADLINE_HOURS) {
+    return number;
+  }
+  return fallback;
+}
+
+export function requirePaymentDeadlineHours(value, label = "Payment deadline") {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < MIN_PAYMENT_DEADLINE_HOURS || number > MAX_PAYMENT_DEADLINE_HOURS) {
+    throw new Error(`${label} must be a whole number from ${MIN_PAYMENT_DEADLINE_HOURS} to ${MAX_PAYMENT_DEADLINE_HOURS} hours.`);
+  }
+  return number;
+}
+
+export function effectivePaymentDeadlineHours(resource, settings = {}) {
+  return normalizePaymentDeadlineHours(
+    resource?.paymentDeadlineHours,
+    normalizePaymentDeadlineHours(settings?.paymentDeadlineHours)
+  );
 }
 
 export function toMinutes(value) {

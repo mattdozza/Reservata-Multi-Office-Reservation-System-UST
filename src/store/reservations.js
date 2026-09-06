@@ -8,14 +8,79 @@ import {
   BUSINESS_DAY_START,
   DEFAULT_SLOT_MINUTES,
   RESOLVED_RESERVATION_STATUSES,
+  ACTIVE_PAYMENT_STATUSES,
+  CLOSED_PAYMENT_STATUSES,
+  DEFAULT_PAYMENT_DEADLINE_HOURS,
   addDaysIso,
   cleanText,
+  effectivePaymentDeadlineHours,
   fromMinutes,
+  normalizePaymentDeadlineHours,
   requireReservationLeadDate,
   requireText,
   selectedDuration,
   validPositiveNumber
 } from "./shared.js";
+
+const REVIEW_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved"];
+const REQUESTER_MUTABLE_STATUSES = ["Under Owner Review", "Under Additional Review", "For Payment", "Confirmed"];
+const ADMIN_OVERRIDE_STATUSES = ["Cancelled", "Expired"];
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function dateTimeMs(date, time = "00:00") {
+  const value = new Date(`${date}T${time}`).getTime();
+  return Number.isFinite(value) ? value : null;
+}
+
+function reservationStartMs(reservation) {
+  return dateTimeMs(reservation?.date, reservation?.start || "00:00");
+}
+
+function reservationEndMs(reservation) {
+  return dateTimeMs(reservation?.date, reservation?.end || reservation?.start || "00:00");
+}
+
+function plusHoursIso(value, hours) {
+  const base = new Date(value || nowIso()).getTime();
+  return new Date(base + hours * 60 * 60 * 1000).toISOString();
+}
+
+function earlierIso(left, right) {
+  if (!left) return right;
+  if (!right) return left;
+  return new Date(left).getTime() <= new Date(right).getTime() ? left : right;
+}
+
+function paymentDeadlineFor(reservation, payment, createdAt = nowIso(), deadlineHours = DEFAULT_PAYMENT_DEADLINE_HOURS) {
+  const rollingDeadline = plusHoursIso(payment?.createdAt || payment?.submittedAt || createdAt, deadlineHours);
+  const scheduleDeadline = reservation?.date && reservation?.start ? new Date(`${reservation.date}T${reservation.start}`).toISOString() : "";
+  return earlierIso(rollingDeadline, scheduleDeadline);
+}
+
+function deadlinePassed(deadline, nowMs = Date.now()) {
+  const value = new Date(deadline || "").getTime();
+  return Number.isFinite(value) && value < nowMs;
+}
+
+function releaseOpenPayment(payment, status, reason) {
+  if (!payment || CLOSED_PAYMENT_STATUSES.includes(payment.status)) return;
+  payment.status = status;
+  payment.rejectionReason = reason;
+}
+
+function resetRouteSteps(steps = []) {
+  const firstSequence = Math.min(...steps.map((step) => Number(step.sequence || 1)));
+  return steps.map((step) => ({
+    ...step,
+    status: Number(step.sequence || 1) === firstSequence ? "Pending" : "Waiting",
+    decidedBy: "",
+    decidedAt: "",
+    reason: ""
+  }));
+}
 
 export const reservationMethods = {
   get officeReservations() {
@@ -42,8 +107,91 @@ export const reservationMethods = {
   },
 
   isReservationOverdue(reservation) {
-    if (!reservation?.date || !reservation?.end || RESOLVED_RESERVATION_STATUSES.includes(reservation.status)) return false;
-    return new Date(`${reservation.date}T${reservation.end}`).getTime() < Date.now();
+    if (!reservation?.date || !reservation?.end || RESOLVED_RESERVATION_STATUSES.includes(reservation.status) || ["Confirmed", "In Use"].includes(reservation.status)) return false;
+    const endMs = reservationEndMs(reservation);
+    return endMs !== null && endMs < Date.now();
+  },
+
+  applyReservationLifecycle() {
+    let changed = 0;
+    const currentMs = Date.now();
+    for (const reservation of this.data.reservations) {
+      const payment = this.data.payments.find((item) => item.id === reservation.paymentId || item.reservationId === reservation.id);
+      if (payment && !payment.paymentDeadlineAt && payment.status === "Awaiting Receipt") {
+        const resource = this.data.resources.find((item) => item.id === reservation.resourceId);
+        payment.paymentDeadlineHours = normalizePaymentDeadlineHours(
+          payment.paymentDeadlineHours,
+          effectivePaymentDeadlineHours(resource, this.settings)
+        );
+        payment.paymentDeadlineAt = paymentDeadlineFor(reservation, payment, nowIso(), payment.paymentDeadlineHours);
+        changed += 1;
+      }
+      const endMs = reservationEndMs(reservation);
+      if (["Confirmed", "In Use"].includes(reservation.status) && endMs !== null && endMs < currentMs) {
+        reservation.status = "Completed";
+        reservation.completedAt = nowLabel();
+        this.addNotification(reservation.requester, `${reservation.resourceName} was completed after its scheduled use.`, "Reservation");
+        this.addActivity("Reservation completed", "System", reservation.resourceName, reservation.id);
+        changed += 1;
+        continue;
+      }
+      const paymentExpired = reservation.status === "For Payment" && payment?.status === "Awaiting Receipt" && deadlinePassed(payment.paymentDeadlineAt, currentMs);
+      if (!paymentExpired && !this.isReservationOverdue(reservation)) {
+        this.sendReservationReminders(reservation, payment, currentMs);
+        continue;
+      }
+      reservation.status = "Expired";
+      reservation.expiredAt = nowLabel();
+      reservation.expiryReason = paymentExpired
+        ? "Payment deadline passed before final confirmation."
+        : "Scheduled end time passed before final confirmation.";
+      reservation.approvalSteps = (reservation.approvalSteps || []).map((step) =>
+        ["Pending", "Waiting"].includes(step.status) ? { ...step, status: "Skipped" } : step
+      );
+      if (payment && ACTIVE_PAYMENT_STATUSES.includes(payment.status)) releaseOpenPayment(payment, "Expired", "Reservation expired before final confirmation.");
+      this.addNotification(
+        reservation.requester,
+        `${reservation.resourceName} expired because ${paymentExpired ? "the payment deadline passed" : "the scheduled time passed before final confirmation"}.`,
+        "Reservation"
+      );
+      this.addNotification(
+        reservation.office,
+        `${reservation.resourceName}: ${reservation.requester}'s request expired before final confirmation.`,
+        "Reservation"
+      );
+      this.addActivity("Reservation expired", "System", reservation.resourceName, reservation.id);
+      changed += 1;
+    }
+    return changed;
+  },
+
+  expireOverdueReservations() {
+    return this.applyReservationLifecycle();
+  },
+
+  sendReservationReminders(reservation, payment, currentMs = Date.now()) {
+    if (reservation.status === "For Payment" && payment?.status === "Awaiting Receipt" && !payment.paymentReminderSentAt) {
+      payment.paymentReminderSentAt = nowLabel();
+      this.addNotification(reservation.requester, `${reservation.resourceName} is awaiting receipt upload before ${payment.paymentDeadlineAt || "the payment deadline"}.`, "Payment");
+      return true;
+    }
+    if (REVIEW_STATUSES.includes(reservation.status) && !reservation.reviewReminderSentAt) {
+      const submitted = new Date(reservation.submittedAt || reservation.createdAt || "").getTime();
+      if (Number.isFinite(submitted) && currentMs - submitted > 24 * 60 * 60 * 1000) {
+        reservation.reviewReminderSentAt = nowLabel();
+        this.addNotification(reservation.office, `${reservation.resourceName} has been waiting for review for more than 24 hours.`, "Approval");
+        return true;
+      }
+    }
+    if (reservation.status === "Confirmed" && !reservation.upcomingReminderSentAt) {
+      const start = reservationStartMs(reservation);
+      if (start && start > currentMs && start - currentMs <= 24 * 60 * 60 * 1000) {
+        reservation.upcomingReminderSentAt = nowLabel();
+        this.addNotification(reservation.requester, `${reservation.resourceName} is scheduled within the next 24 hours.`, "Reservation");
+        return true;
+      }
+    }
+    return false;
   },
 
   get overdueReservations() {
@@ -184,6 +332,7 @@ export const reservationMethods = {
       requester: this.currentUser.name,
       resourceId: resource.id,
       resourceName: resource.name,
+      resourceAssetTag: resource.assetTag,
       office: resource.office,
       type: resource.type,
       date,
@@ -197,6 +346,7 @@ export const reservationMethods = {
       requiresPayment: resource.requiresPayment,
       workflowTemplateId: template?.id || "WF-BASIC",
       workflowName: template?.name || "Basic Resource Approval",
+      rescheduleCount: 0,
       approvalSteps: buildApprovalSteps(template, resource, requestDetails, id)
     };
 
@@ -228,6 +378,8 @@ export const reservationMethods = {
     if (reservation.status === "For Payment" && !reservation.paymentId) {
       const resource = this.data.resources.find((item) => item.id === reservation.resourceId);
       const paymentId = nextId("PAY", this.data.payments);
+      const paymentDeadlineHours = effectivePaymentDeadlineHours(resource, this.settings);
+      const createdAt = nowIso();
       reservation.paymentId = paymentId;
       this.data.payments.unshift({
         id: paymentId,
@@ -236,7 +388,10 @@ export const reservationMethods = {
         office: reservation.office,
         amount: resource?.fee || 0,
         receipt: "Awaiting upload",
-        status: "Awaiting Receipt"
+        status: "Awaiting Receipt",
+        createdAt,
+        paymentDeadlineHours,
+        paymentDeadlineAt: paymentDeadlineFor(reservation, null, createdAt, paymentDeadlineHours)
       });
     }
     this.addNotification(
@@ -265,5 +420,95 @@ export const reservationMethods = {
     );
     this.addActivity("Approval step rejected", this.currentUser.name, `${reservation.resourceName}: ${step.name}`, cleanReason);
     await this.save(() => awsApi.decideReservation(id, step.id, false, cleanReason), previousData);
+  },
+
+  async cancelReservation(id, reason = "Cancelled by requester") {
+    this.requireRole("requester");
+    const reservation = this.data.reservations.find((item) => item.id === id);
+    if (!reservation || reservation.requester !== this.currentUser.name) throw new Error("This reservation does not belong to your account.");
+    if (!REQUESTER_MUTABLE_STATUSES.includes(reservation.status)) throw new Error("Only active upcoming reservations can be cancelled.");
+    if (reservationStartMs(reservation) <= Date.now()) throw new Error("Reservations cannot be cancelled after the scheduled start time.");
+    const cleanReason = requireText(reason, "Cancellation reason", 8);
+    const previousData = this.snapshot();
+    reservation.status = "Cancelled";
+    reservation.cancelledAt = nowLabel();
+    reservation.cancelledBy = this.currentUser.name;
+    reservation.cancellationReason = cleanReason;
+    reservation.approvalSteps = (reservation.approvalSteps || []).map((step) =>
+      ["Pending", "Waiting"].includes(step.status) ? { ...step, status: "Skipped" } : step
+    );
+    releaseOpenPayment(this.data.payments.find((item) => item.id === reservation.paymentId || item.reservationId === reservation.id), "Cancelled", cleanReason);
+    this.addNotification(reservation.office, `${reservation.resourceName}: ${reservation.requester} cancelled the reservation. Reason: ${cleanReason}`, "Reservation");
+    this.addActivity("Reservation cancelled", this.currentUser.name, reservation.resourceName, cleanReason);
+    await this.save(() => awsApi.cancelReservation(id, cleanReason), previousData);
+  },
+
+  async rescheduleReservation(id, values) {
+    this.requireRole("requester");
+    const reservation = this.data.reservations.find((item) => item.id === id);
+    if (!reservation || reservation.requester !== this.currentUser.name) throw new Error("This reservation does not belong to your account.");
+    if (!REQUESTER_MUTABLE_STATUSES.includes(reservation.status)) throw new Error("Only active upcoming reservations can be rescheduled.");
+    if (reservationStartMs(reservation) <= Date.now()) throw new Error("Reservations cannot be rescheduled after the scheduled start time.");
+    const date = requireReservationLeadDate(values.date);
+    const start = cleanText(values.start);
+    const end = cleanText(values.end);
+    if (!start || !end) throw new Error("Start and end time are required.");
+    if (start >= end) throw new Error("End time must be later than start time.");
+    if (this.hasConflict(reservation.resourceId, date, start, end, reservation.id)) {
+      throw new Error("That resource already has an overlapping reservation request.");
+    }
+    const previousData = this.snapshot();
+    const previousSchedule = `${reservation.date} ${reservation.start}-${reservation.end}`;
+    reservation.date = date;
+    reservation.start = start;
+    reservation.end = end;
+    reservation.status = "Under Owner Review";
+    reservation.rescheduleCount = Number(reservation.rescheduleCount || 0) + 1;
+    reservation.rescheduledAt = nowLabel();
+    reservation.approvalSteps = resetRouteSteps(reservation.approvalSteps);
+    releaseOpenPayment(this.data.payments.find((item) => item.id === reservation.paymentId || item.reservationId === reservation.id), "Cancelled", "Reservation was rescheduled and sent back for approval.");
+    reservation.paymentId = "";
+    this.addNotification(reservation.office, `${reservation.resourceName}: ${reservation.requester} requested a reschedule from ${previousSchedule} to ${date} ${start}-${end}.`, "Reservation");
+    this.addActivity("Reservation rescheduled", this.currentUser.name, reservation.resourceName, `${previousSchedule} -> ${date} ${start}-${end}`);
+    await this.save(() => awsApi.rescheduleReservation(id, { date, start, end }), previousData);
+  },
+
+  async updateReservationLifecycleStatus(id, status, reason = "") {
+    this.requireRole("officeAdmin", "superAdmin");
+    const reservation = this.data.reservations.find((item) => item.id === id);
+    if (!reservation) return;
+    if (this.session.activeRole === "officeAdmin") this.requireOfficeRecord(reservation);
+    const cleanReason = ["No Show", ...ADMIN_OVERRIDE_STATUSES].includes(status) ? requireText(reason, "Reason", 8) : cleanText(reason);
+    const previousData = this.snapshot();
+    if (status === "In Use") {
+      if (reservation.status !== "Confirmed") throw new Error("Only confirmed reservations can be marked in use.");
+      reservation.status = "In Use";
+      reservation.startedAt = nowLabel();
+    } else if (status === "Completed") {
+      if (!["Confirmed", "In Use"].includes(reservation.status)) throw new Error("Only confirmed or in-use reservations can be completed.");
+      reservation.status = "Completed";
+      reservation.completedAt = nowLabel();
+    } else if (status === "No Show") {
+      if (reservation.status !== "Confirmed") throw new Error("Only confirmed reservations can be marked no-show.");
+      if (reservationStartMs(reservation) > Date.now()) throw new Error("No-show can only be recorded after the scheduled start time.");
+      reservation.status = "No Show";
+      reservation.noShowAt = nowLabel();
+      reservation.noShowReason = cleanReason;
+    } else if (ADMIN_OVERRIDE_STATUSES.includes(status)) {
+      if (RESOLVED_RESERVATION_STATUSES.includes(reservation.status)) throw new Error("This reservation is already closed.");
+      reservation.status = status;
+      reservation.overrideAt = nowLabel();
+      reservation.overrideBy = this.currentUser.name;
+      reservation.overrideReason = cleanReason;
+      reservation.approvalSteps = (reservation.approvalSteps || []).map((step) =>
+        ["Pending", "Waiting"].includes(step.status) ? { ...step, status: "Skipped" } : step
+      );
+      releaseOpenPayment(this.data.payments.find((item) => item.id === reservation.paymentId || item.reservationId === reservation.id), status, cleanReason);
+    } else {
+      throw new Error("Unsupported reservation status update.");
+    }
+    this.addNotification(reservation.requester, `${reservation.resourceName} status changed to ${status}${cleanReason ? `. Reason: ${cleanReason}` : "."}`, "Reservation");
+    this.addActivity(`Reservation marked ${status}`, this.currentUser.name, reservation.resourceName, cleanReason);
+    await this.save(() => awsApi.updateReservationStatus(id, status, cleanReason), previousData);
   }
 };

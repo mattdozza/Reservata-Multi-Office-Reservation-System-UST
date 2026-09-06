@@ -4,6 +4,7 @@ import { authenticatedUser, requireOffice, requireRole, ROLES } from "../lib/aut
 import { HttpError, json, method, parseBody, requireFields, wrap } from "../lib/http.mjs";
 import { repository } from "../lib/repository.mjs";
 import { activityRecord, newestFirst, notificationRecord, now } from "../lib/records.mjs";
+import { expireReservations } from "../lib/reservationLifecycle.mjs";
 import { reservationSlots } from "../lib/slots.mjs";
 import { TABLES } from "../lib/tables.mjs";
 
@@ -35,6 +36,11 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
     if (requestMethod === "POST") {
       requireRole(user, ROLES.requester);
       if (payment.requesterEmail !== user.email) throw new HttpError(403, "This payment does not belong to your account.");
+      const reservation = await repo.get(TABLES.reservations, { id: payment.reservationId });
+      if (!reservation) throw new HttpError(404, "Related reservation not found.");
+      await expireReservations(repo, [reservation], [payment]);
+      if (reservation.status === "Expired" || payment.status === "Expired") throw new HttpError(409, "This reservation expired before final confirmation.");
+      if (reservation.status !== "For Payment" || payment.status !== "Awaiting Receipt") throw new HttpError(409, "This reservation is no longer awaiting a receipt.");
       const body = parseBody(event);
       requireFields(body, ["filename", "contentType"]);
       if (!ALLOWED_RECEIPTS.has(body.contentType)) throw new HttpError(400, "Receipt must be a JPG, PNG, or PDF file.");
@@ -61,6 +67,8 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       if (body.verified && payment.receipt === "Awaiting upload") throw new HttpError(409, "A receipt must be uploaded before verification.");
       const reservation = await repo.get(TABLES.reservations, { id: payment.reservationId });
       if (!reservation) throw new HttpError(404, "Related reservation not found.");
+      await expireReservations(repo, [reservation], [payment]);
+      if (reservation.status === "Expired" || payment.status === "Expired") throw new HttpError(409, "This reservation expired before final confirmation.");
       requireOffice(user, reservation);
       const paymentStatus = body.verified ? "Verified" : "Rejected";
       const reservationStatus = body.verified ? "Confirmed" : "Rejected";

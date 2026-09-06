@@ -1,8 +1,17 @@
 import { ROLE_IDS } from "../config.js";
 import { awsApi } from "../awsApi.js";
-import { cleanText, isUstSsoEmail, requireText } from "./shared.js";
+import { cleanText, isUstSsoEmail, requirePaymentDeadlineHours, requireText } from "./shared.js";
 
 export const adminMethods = {
+  async updatePaymentDeadlineSettings(value) {
+    this.requireRole("superAdmin");
+    const paymentDeadlineHours = requirePaymentDeadlineHours(value, "Default payment window");
+    const previousData = this.snapshot();
+    this.settings.paymentDeadlineHours = paymentDeadlineHours;
+    this.addActivity("Payment window updated", this.currentUser.name, `${paymentDeadlineHours} hours`);
+    await this.save(() => awsApi.updateSystemSettings(this.settings), previousData);
+  },
+
   async addSampleOffice() {
     this.requireRole("superAdmin");
     const previousData = this.snapshot();
@@ -114,7 +123,7 @@ export const adminMethods = {
     if (existing) Object.assign(existing, option);
     else this.settings.requirementOptions.push(option);
     this.addActivity(existing ? "Requirement updated" : "Requirement created", this.currentUser.name, option.label);
-    await this.save(() => Promise.resolve(), previousData);
+    await this.save(() => awsApi.updateSystemSettings(this.settings), previousData);
   },
 
   async archiveRequirementOption(id) {
@@ -124,7 +133,7 @@ export const adminMethods = {
     const previousData = this.snapshot();
     option.status = "Archived";
     this.addActivity("Requirement archived", this.currentUser.name, option.label);
-    await this.save(() => Promise.resolve(), previousData);
+    await this.save(() => awsApi.updateSystemSettings(this.settings), previousData);
   },
 
   async archiveWorkflow(id) {
