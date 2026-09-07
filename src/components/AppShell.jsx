@@ -22,6 +22,8 @@ import {
   UsersRound
 } from "lucide-react";
 import { NAV_ITEMS, PAGE_TITLES } from "../config.js";
+import { useState } from "react";
+import { Menu, X } from "lucide-react";
 
 const VIEW_ICONS = {
   dashboard: Home,
@@ -56,6 +58,7 @@ function navCount(store, view) {
 }
 
 export default function AppShell({ store, onNavigate, onLogout, onReset, onNotification, children }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const user = store.currentUser;
   const navItems = NAV_ITEMS[store.session.activeRole] || [];
   const [title, subtitle] = PAGE_TITLES[store.session.activeView] || PAGE_TITLES.dashboard;
@@ -63,7 +66,7 @@ export default function AppShell({ store, onNavigate, onLogout, onReset, onNotif
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar ${menuOpen ? "menu-open" : ""}`}>
         <header className="sidebar-header">
           <button className="brand-button" onClick={() => onNavigate(user.home)} type="button">
             <img className="brand-logo" src="/images/logo2.svg" alt="University of Santo Tomas seal" />
@@ -73,16 +76,20 @@ export default function AppShell({ store, onNavigate, onLogout, onReset, onNotif
             </span>
           </button>
         </header>
+        <button className="mobile-menu-button ghost-button" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls="portal-navigation" onClick={() => setMenuOpen((open) => !open)} type="button">
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
 
         <div className="office-pill">{user.office}</div>
-        <nav className="sidebar-nav" aria-label="Portal navigation">
+        <nav id="portal-navigation" className="sidebar-nav" aria-label="Portal navigation">
           {navItems.map(([view, label]) => {
             const Icon = VIEW_ICONS[view] || Package;
             const count = navCount(store, view);
             return (
               <button
                 className={`nav-button ${store.session.activeView === view ? "active" : ""}`}
-                onClick={() => onNavigate(view)}
+                onClick={() => { onNavigate(view); setMenuOpen(false); }}
+                aria-current={store.session.activeView === view ? "page" : undefined}
                 type="button"
                 key={view}
               >
@@ -127,7 +134,7 @@ export default function AppShell({ store, onNavigate, onLogout, onReset, onNotif
           </div>
         </header>
 
-        <section className="view-root" key={store.session.activeView}>{children}</section>
+        <section className="view-root" data-view={store.session.activeView} key={store.session.activeView}>{children}</section>
       </main>
     </div>
   );

@@ -657,8 +657,12 @@ function assertScopedMutation(before, after, user, database) {
       }
       requesterNotificationTargets.add(reservation.office);
     }
-    if (changedPayments.some((payment) => reservationById.get(payment.reservationId)?.requester !== user.name)) {
-      throw new HttpError(403, "That payment does not belong to the signed-in requester.");
+    for (const payment of changedPayments) {
+      const reservation = reservationById.get(payment.reservationId);
+      if (reservation?.requester !== user.name) {
+        throw new HttpError(403, "That payment does not belong to the signed-in requester.");
+      }
+      requesterNotificationTargets.add(paymentOffice(payment));
     }
   }
 

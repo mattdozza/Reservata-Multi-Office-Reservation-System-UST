@@ -345,6 +345,94 @@ test("supporting office can approve final step and create owner payment handoff"
   }
 });
 
+test("local API lets requesters upload receipts and notify the payment office", async () => {
+  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const database = JSON.parse(originalDatabase);
+  database.reservations.unshift({
+    id: "REQ-LOCAL-RECEIPT",
+    requester: "Student Body Requester",
+    resourceId: "R-004",
+    resourceName: "Multipurpose Hall",
+    office: "Simbahayan",
+    type: "Facility",
+    date: "2099-09-10",
+    start: "09:00",
+    end: "10:00",
+    quantity: 1,
+    purpose: "Receipt upload regression test",
+    status: "For Payment",
+    submittedAt: "Just now",
+    requiresPayment: true,
+    paymentId: "PAY-LOCAL-RECEIPT",
+    workflowTemplateId: "WF-VENUE",
+    approvalSteps: [{ id: "REQ-LOCAL-RECEIPT-OWNER", office: "Simbahayan", status: "Approved", sequence: 1 }]
+  });
+  database.payments.unshift({
+    id: "PAY-LOCAL-RECEIPT",
+    reservationId: "REQ-LOCAL-RECEIPT",
+    requester: "Student Body Requester",
+    office: "Simbahayan",
+    amount: 1500,
+    receipt: "Awaiting upload",
+    status: "Awaiting Receipt"
+  });
+  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
+
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "student.body.requester@ust.edu.ph", password: "Requester2026!" })
+    });
+    assert.equal(login.status, 200);
+    const { token } = await login.json();
+
+    const stateResponse = await fetch(`${baseUrl}/api/state`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const state = await stateResponse.json();
+    const payment = state.payments.find((item) => item.id === "PAY-LOCAL-RECEIPT");
+    assert.ok(payment);
+    payment.receipt = "receipt.jpg";
+    payment.receiptType = "image/jpeg";
+    payment.status = "Pending Verification";
+    state.notifications.unshift({
+      id: "N-LOCAL-RECEIPT",
+      user: "Simbahayan",
+      office: "Simbahayan",
+      message: "Multipurpose Hall: Student Body Requester uploaded a receipt for verification.",
+      unread: true,
+      type: "Payment"
+    });
+    state.activity.unshift({
+      id: "ACT-LOCAL-RECEIPT",
+      action: "Payment receipt uploaded",
+      actor: "Student Body Requester",
+      target: "Multipurpose Hall",
+      time: "Just now"
+    });
+
+    const save = await fetch(`${baseUrl}/api/state`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(state)
+    });
+    const saveBody = await save.json();
+    assert.equal(save.status, 200, saveBody.error);
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+  }
+});
+
 test("local API blocks reservations against hidden pending conflicts and reports alternatives", async () => {
   const dbPath = path.join(__dirname, "..", "data", "db.json");
   const originalDatabase = fs.readFileSync(dbPath, "utf8");

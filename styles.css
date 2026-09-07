@@ -1899,22 +1899,264 @@ tbody tr:hover {
 }
 
 .workflow-settings {
-  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.workflow-settings [role="tabpanel"][hidden] {
+  display: none;
+}
+
+.workflow-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+
+.workflow-tabs button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.workflow-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--sun);
+  color: var(--ink);
+}
+
+.workflow-tabs button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+.workflow-panel {
+  min-width: 0;
+  padding: 24px;
+  border-block: 1px solid var(--line);
+  background: var(--card);
+}
+
+.workflow-panel + .workflow-panel {
+  margin-top: 28px;
+}
+
+.workflow-panel .card-header {
+  min-height: 0;
+  padding: 0 0 20px;
+  margin-bottom: 24px;
+}
+
+.workflow-panel .card-header p {
+  line-height: 1.5;
+}
+
+.workflow-settings .field {
+  min-width: 0;
+}
+
+.workflow-settings .field label {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-settings :is(.input, .select, .textarea) {
+  min-width: 0;
+}
+
+.workflow-details {
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.workflow-settings .form-actions {
+  justify-content: flex-start;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.workflow-settings .form-actions button {
+  white-space: normal;
+}
+
+.workflow-payment .form-grid {
+  grid-template-columns: minmax(0, 420px);
 }
 
 .workflow-step-editor {
   display: grid;
-  gap: 10px;
-  margin-top: 22px;
+  margin-top: 28px;
+}
+
+.workflow-step-editor h3 {
+  margin: 0;
+  padding-bottom: 16px;
+  font-size: 15px;
+}
+
+.workflow-step-editor h3 span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .workflow-step-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(170px, 1fr) 88px minmax(190px, 1.2fr) 38px;
+  grid-template-columns: 28px minmax(0, 1.3fr) minmax(0, 1fr) 80px minmax(0, 1.2fr) 42px;
   align-items: end;
-  gap: 10px;
+  gap: 16px;
   border-top: 1px solid var(--line);
-  padding-top: 12px;
+  padding: 20px 0;
+}
+
+.workflow-step-number {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 7px;
+  border-radius: 50%;
+  background: #f0f1f3;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-step-row .danger-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.workflow-catalog table {
+  min-width: 560px;
+}
+
+.workflow-requirements-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.workflow-settings .requirement-manager {
+  display: block;
+}
+
+.workflow-settings .requirement-list {
+  gap: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 28px;
+}
+
+.workflow-settings .list-item {
+  padding: 20px 0;
+}
+
+.workflow-settings .list-item:first-child {
+  padding-top: 0;
+}
+
+.workflow-settings .list-item > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 960px) {
+  .workflow-step-row {
+    grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 80px 42px;
+  }
+
+  .workflow-step-row .field:first-of-type {
+    grid-column: 2 / 5;
+  }
+
+  .workflow-step-row .field:nth-of-type(2) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .workflow-step-row .field:nth-of-type(3) {
+    grid-column: 4;
+    grid-row: 2;
+  }
+
+  .workflow-step-row .field:last-of-type {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .workflow-step-row .danger-icon {
+    grid-column: 5;
+    grid-row: 1;
+  }
+}
+
+@container (max-width: 620px) {
+  .workflow-panel {
+    padding: 20px 16px;
+  }
+
+  .workflow-tabs {
+    gap: 20px;
+  }
+
+  .workflow-tabs button {
+    font-size: 12px;
+  }
+
+  .workflow-details,
+  .workflow-requirements-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workflow-step-row {
+    grid-template-columns: minmax(0, 1fr) 80px 42px;
+    gap: 16px 12px;
+  }
+
+  .workflow-step-number {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .workflow-step-row .field:first-of-type {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .workflow-step-row .field:nth-of-type(2) {
+    grid-column: 1 / 3;
+    grid-row: 3;
+  }
+
+  .workflow-step-row .field:nth-of-type(3) {
+    grid-column: 1;
+    grid-row: 4;
+  }
+
+  .workflow-step-row .field:last-of-type {
+    grid-column: 1 / -1;
+    grid-row: 5;
+  }
+
+  .workflow-step-row .danger-icon {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .workflow-settings .requirement-list {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 24px 0 0;
+  }
 }
 
 .danger-icon {
@@ -2276,7 +2518,6 @@ tbody tr:hover {
   .requester-steps,
   .requirement-fields,
   .settings-layout,
-  .workflow-step-row,
   .metrics-grid,
   .two-col,
   .three-col,

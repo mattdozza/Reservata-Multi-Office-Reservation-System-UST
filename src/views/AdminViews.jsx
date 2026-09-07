@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Archive, Edit3 } from "lucide-react";
+import { PageTabs, TabPanel } from "../components/PageTabs.jsx";
 import { ActivityRows, Badge, CardHeader, EmptyState } from "../components/Common.jsx";
 import { downloadCsv, sortBy } from "../utils.js";
 
@@ -22,8 +24,8 @@ export function OfficeRows({ store, onNavigate, onEdit, onArchive }) {
         </div>
         <div className="split-actions">
           {onNavigate && <button className="secondary-button" onClick={() => onNavigate("resources")} type="button">View Coverage</button>}
-          {onEdit && <button className="secondary-button" onClick={() => onEdit(office)} type="button">Edit</button>}
-          {onArchive && <button className="danger-button" onClick={() => onArchive(office.id)} type="button">Archive</button>}
+          {onEdit && <button className="icon-button" aria-label={`Edit ${office.name}`} title="Edit office" onClick={() => onEdit(office)} type="button"><Edit3 size={16} /></button>}
+          {onArchive && <button className="icon-button danger-icon" aria-label={`Archive ${office.name}`} title="Archive office" onClick={() => onArchive(office.id)} type="button"><Archive size={16} /></button>}
         </div>
       </div>
     );
@@ -31,6 +33,7 @@ export function OfficeRows({ store, onNavigate, onEdit, onArchive }) {
 }
 
 export function OfficesView({ store, onAction, onNavigate }) {
+  const [activeTab, setActiveTab] = useState("directory");
   const [selected, setSelected] = useState(null);
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
@@ -39,10 +42,11 @@ export function OfficesView({ store, onAction, onNavigate }) {
   async function submit(event) {
     event.preventDefault();
     const saved = await onAction(() => store.saveOffice({ name, status }, selected?.id), selected ? "Office updated." : "Office created.");
-    if (saved) { setName(""); setStatus("Active"); setSelected(null); }
+    if (saved) { setName(""); setStatus("Active"); setSelected(null); setActiveTab("directory"); }
   }
 
   function edit(office) {
+    setActiveTab("editor");
     setSelected(office);
     setName(office.name);
     setStatus(office.status);
@@ -50,7 +54,9 @@ export function OfficesView({ store, onAction, onNavigate }) {
 
   return (
     <>
-      <form className="toolbar office-editor" onSubmit={submit}>
+      <PageTabs id="offices" label="Office management" tabs={[["directory", "Office directory"], ["editor", selected ? "Edit office" : "Add office"]]} value={activeTab} onChange={setActiveTab} />
+      <TabPanel id="offices" name="editor" value={activeTab}>
+      <form className="toolbar office-editor card form-card" onSubmit={submit}>
         <div><strong>{selected ? "Edit office" : "Add office"}</strong><p className="toolbar-copy">Resource ownership and administrator assignment.</p></div>
         <div className="toolbar-group">
           <input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Office name" aria-label="Office name" required />
@@ -59,6 +65,8 @@ export function OfficesView({ store, onAction, onNavigate }) {
           {selected && <button className="secondary-button" onClick={() => { setSelected(null); setName(""); setStatus("Active"); }} type="button">Cancel</button>}
         </div>
       </form>
+      </TabPanel>
+      <TabPanel id="offices" name="directory" value={activeTab}>
       <div className="toolbar">
         <input className="input user-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search offices" aria-label="Search offices" />
       </div>
@@ -76,11 +84,13 @@ export function OfficesView({ store, onAction, onNavigate }) {
           onArchive={(id) => window.confirm("Archive this office? Active resources must be transferred or archived first.") && onAction(() => store.archiveOffice(id), "Office archived.")}
         />
       </article>
+      </TabPanel>
     </>
   );
 }
 
 export function UsersView({ store, onAction }) {
+  const [activeTab, setActiveTab] = useState("directory");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("name");
   const [draft, setDraft] = useState({
@@ -103,6 +113,7 @@ export function UsersView({ store, onAction }) {
     event.preventDefault();
     const saved = await onAction(() => store.createUser(draft), "SSO account provisioned.");
     if (saved) {
+      setActiveTab("directory");
       setDraft({
         name: "",
         email: "",
@@ -127,6 +138,8 @@ export function UsersView({ store, onAction }) {
 
   return (
     <>
+      <PageTabs id="users" label="User management" tabs={[["directory", "Users & roles"], ["editor", "Add account"]]} value={activeTab} onChange={setActiveTab} />
+      <TabPanel id="users" name="editor" value={activeTab}>
       <form className="card form-card user-create-form" onSubmit={submit} noValidate>
         <CardHeader title="Provision SSO account" subtitle="Only Super Admins can register a UST SSO identity for RESERVATA access." />
         <div className="form-grid">
@@ -172,6 +185,8 @@ export function UsersView({ store, onAction }) {
           <button className="primary-button" type="submit">Create Account</button>
         </div>
       </form>
+      </TabPanel>
+      <TabPanel id="users" name="directory" value={activeTab}>
       <div className="toolbar">
         <input
           className="input user-search"
@@ -237,6 +252,7 @@ export function UsersView({ store, onAction }) {
         </table>
         {!people.length && <EmptyState>No matching users found.</EmptyState>}
       </article>
+      </TabPanel>
     </>
   );
 }

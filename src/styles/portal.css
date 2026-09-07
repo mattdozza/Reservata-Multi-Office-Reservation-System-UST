@@ -1,0 +1,519 @@
+/* Shared spacing and responsive surfaces for the signed-in portals. */
+.app-shell {
+  --panel-space: 24px;
+  --layout-gap: 24px;
+}
+
+.main {
+  padding: 28px 32px 48px;
+}
+
+.view-root {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.view-root [role="tabpanel"][hidden] {
+  display: none;
+}
+
+.view-root :is(.grid, .stack, .form-grid, .toolbar-group, .list-item, .detail-grid) > *,
+.view-root :is(.card, .field, .table-wrap, [role="tabpanel"]),
+.topbar > div {
+  min-width: 0;
+}
+
+.view-root .card:not(.resource-card):not(.metric-card) {
+  border: 0;
+  border-block: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.view-root :is(.grid, .stack) {
+  gap: var(--layout-gap);
+}
+
+.view-root .section-gap {
+  margin-top: var(--layout-gap);
+}
+
+.view-root .two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.view-root .four-col {
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+
+.view-root .card-header {
+  padding: 20px var(--panel-space);
+  min-height: 80px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.view-root .card-header > div {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.view-root .card-header :is(h2, h3) {
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.view-root .card-header p {
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 75ch;
+}
+
+.view-root :is(.form-card, .profile-details, .parking-content) {
+  padding: var(--panel-space);
+}
+
+.view-root .form-card > .card-header {
+  padding: 0 0 20px;
+  margin-bottom: 24px;
+  min-height: 0;
+}
+
+.view-root .form-grid {
+  gap: 24px 20px;
+}
+
+.view-root :is(.field label, .field-label, .reason-field > span) {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: none;
+}
+
+.view-root :is(.input, .select, .textarea) {
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.view-root :is(.input, .select) {
+  min-height: 44px;
+}
+
+.view-root .form-actions {
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+  justify-content: flex-start;
+}
+
+.view-root .split-actions {
+  gap: 10px;
+}
+
+.view-root :is(.primary-button, .secondary-button, .success-button, .warning-button, .danger-button, .file-button) {
+  min-height: 42px;
+  border-radius: 6px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.view-root .danger-button {
+  color: #973c38;
+  background: #fff2f1;
+}
+
+.view-root .danger-button:hover:not(:disabled) {
+  color: #fff;
+  background: var(--red);
+}
+
+.icon-button, .view-root button svg {
+  flex-shrink: 0;
+}
+
+.view-root .toolbar {
+  gap: 16px;
+  margin-bottom: 24px;
+  justify-content: flex-start;
+}
+
+.view-root .toolbar-group {
+  gap: 12px;
+  flex: 1 1 360px;
+}
+
+.view-root .toolbar :is(.input, .select) {
+  flex: 1 1 180px;
+  width: auto;
+}
+
+.view-root .toolbar .resource-search {
+  flex-basis: 260px;
+}
+
+.view-root .list-toolbar {
+  margin: 0;
+  padding: 20px var(--panel-space);
+  background: #fafbfc;
+}
+
+.view-root .list-item {
+  padding: 24px var(--panel-space);
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.view-root .list-item > div:first-child {
+  flex: 1 1 260px;
+  overflow-wrap: anywhere;
+}
+
+.view-root .list-item > .split-actions {
+  flex: 0 1 auto;
+  justify-content: flex-start;
+}
+
+.view-root .list-item h3 {
+  line-height: 1.4;
+}
+
+.view-root .list-item p {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.view-root .notification-item {
+  padding: 24px var(--panel-space);
+  gap: 16px;
+}
+
+.view-root .notification-item > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.view-root .table-wrap {
+  max-width: 100%;
+}
+
+.view-root th,
+.view-root td {
+  padding: 16px 20px;
+  line-height: 1.5;
+}
+
+.view-root th {
+  letter-spacing: 0;
+}
+
+.view-root td small {
+  color: var(--muted);
+}
+
+.view-root .empty-state {
+  padding: 40px var(--panel-space);
+  line-height: 1.5;
+}
+
+.page-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+
+.page-tabs button {
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.page-tabs button[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--sun);
+}
+
+.view-root .office-editor {
+  display: grid;
+  gap: 24px;
+}
+
+.view-root .office-editor .toolbar-group {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto;
+}
+
+.view-root .user-create-form {
+  margin-bottom: 0;
+}
+
+.view-root .user-create-form .form-grid {
+  margin-top: 0;
+}
+
+.view-root .resource-settings .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.view-root .tabs {
+  flex: 1 1 100%;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.view-root .tab {
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.view-root .resource-body {
+  padding: 20px;
+}
+
+.view-root .resource-body h3 {
+  font-size: 17px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.view-root .resource-art {
+  min-height: 64px;
+  letter-spacing: 0;
+}
+
+.view-root .hero {
+  background: #fff;
+  color: var(--ink);
+  border-radius: 0;
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.view-root .hero::before {
+  display: none;
+}
+
+.view-root .hero h2 {
+  font-size: 24px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.view-root .hero p {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.view-root .eyebrow {
+  color: var(--blue);
+  letter-spacing: 0;
+}
+
+.view-root .metric-card {
+  min-height: 132px;
+  padding: 20px;
+}
+
+.view-root .metric-card small {
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.view-root .calendar-layout {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.view-root .calendar-day {
+  height: 120px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.view-root .event-pill {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.view-root .detail-box {
+  overflow-wrap: anywhere;
+}
+
+.view-root .requirement-fields {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.view-root .requirement-fields .check-field {
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  padding: 14px 0;
+}
+
+.view-root .check-field strong {
+  font-size: 13px;
+  text-transform: none;
+  line-height: 1.4;
+}
+
+.view-root .check-field small {
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.view-root .parking-bay:disabled {
+  opacity: 1;
+}
+
+.view-root .parking-bay {
+  min-height: 100px;
+  overflow-wrap: anywhere;
+}
+
+.mobile-menu-button {
+  display: none;
+}
+
+@container (max-width: 960px) {
+  .view-root .two-col,
+  .view-root .calendar-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .view-root .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 620px) {
+  .view-root :is(.form-grid, .detail-grid),
+  .view-root .resource-settings .form-grid,
+  .view-root .office-editor .toolbar-group {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .view-root .span-2 {
+    grid-column: 1 / -1;
+  }
+
+  .view-root .list-item > .split-actions {
+    flex-basis: 100%;
+  }
+
+  .view-root .calendar-day {
+    height: 100px;
+    padding: 5px;
+  }
+
+  .view-root .event-pill {
+    padding: 2px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 1020px) {
+  .sidebar {
+    position: relative;
+    padding: 16px 20px;
+  }
+
+  .sidebar-header {
+    margin: 0;
+    padding-right: 54px;
+  }
+
+  .mobile-menu-button {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+  }
+
+  .sidebar :is(.office-pill, .sidebar-nav, .sidebar-footer) {
+    display: none;
+  }
+
+  .sidebar.menu-open .office-pill {
+    display: block;
+    margin: 20px 0 16px;
+  }
+
+  .sidebar.menu-open .sidebar-nav,
+  .sidebar.menu-open .sidebar-footer {
+    display: grid;
+  }
+
+  .sidebar.menu-open .sidebar-footer {
+    margin-top: 20px;
+  }
+
+  .main {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 620px) {
+  .app-shell {
+    --panel-space: 16px;
+    --layout-gap: 20px;
+  }
+
+  .main {
+    padding: 24px 16px 36px;
+  }
+
+  .topbar h1 {
+    font-size: 25px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .topbar-actions {
+    width: 100%;
+  }
+
+  .profile-chip {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .profile-chip > span:first-child {
+    flex-shrink: 0;
+  }
+
+  .profile-chip strong {
+    overflow-wrap: anywhere;
+  }
+
+  .view-root .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .view-root .metric-card {
+    padding: 16px;
+  }
+
+  .view-root .metric-card strong {
+    font-size: 28px;
+  }
+}
