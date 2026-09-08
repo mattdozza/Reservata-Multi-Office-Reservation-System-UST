@@ -1,4 +1,108 @@
 /* Shared spacing and responsive surfaces for the signed-in portals. */
+.managed-form-fields {
+  display: contents;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.view-root .form-card > .managed-form-fields > .card-header {
+  padding: 0 0 20px;
+  margin-bottom: 24px;
+  min-height: 0;
+}
+
+.field-error, .field-error a {
+  color: #a02e2e;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form-progress, .schedule-availability {
+  font-size: 13px;
+  color: var(--blue);
+}
+
+.draft-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 20px;
+  font-size: 13px;
+}
+
+.resource-photo {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #f0f2f4;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.resource-photo img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.resource-photo > span {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.resource-photo-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+}
+
+.resource-photo-editor input {
+  max-width: 100%;
+}
+
+.resource-filter-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+  padding: 24px;
+  background: #fff;
+  border-block: 1px solid var(--line);
+}
+
+.reservation-timeline {
+  padding: 0 0 0 20px;
+  list-style: none;
+}
+
+.reservation-timeline li {
+  border-left: 2px solid var(--line);
+  padding: 0 0 24px 20px;
+  overflow-wrap: anywhere;
+}
+
+.reservation-timeline p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .resource-photo-editor, .resource-filter-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .app-shell {
   --panel-space: 24px;
   --layout-gap: 24px;

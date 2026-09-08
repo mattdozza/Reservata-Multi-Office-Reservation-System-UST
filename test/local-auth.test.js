@@ -3,7 +3,16 @@ const { once } = require("node:events");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const os = require("node:os");
+const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "reservata-tests-"));
+const testDbPath = path.join(testDirectory, "db.json");
+fs.copyFileSync(path.join(__dirname, "..", "data", "db.json"), testDbPath);
+process.env.RESERVATA_DB_PATH = testDbPath;
 const { createServer } = require("../server.js");
+test.after(() => {
+  fs.unlinkSync(testDbPath);
+  fs.rmdirSync(testDirectory);
+});
 
 const ACCOUNTS = [
   ["student.body.requester@ust.edu.ph", "Requester2026!", "Requester"],
@@ -14,6 +23,48 @@ const ACCOUNTS = [
   ["facilities.admin@ust.edu.ph", "Facilities2026!", "Office Admin"]
 ];
 
+test("resource photos are stored privately and limited to the resource office", async () => {
+  const dbPath = testDbPath;
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const base = `http://127.0.0.1:${server.address().port}`;
+  let photoPath;
+  try {
+    const login = async (account) => {
+      const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: account[0], password: account[1] }) });
+      return { Authorization: `Bearer ${(await response.json()).token}`, "Content-Type": "application/json" };
+    };
+    const admin = await login(ACCOUNTS[1]);
+    const requester = await login(ACCOUNTS[0]);
+    const otherOffice = await login(ACCOUNTS[5]);
+    const data = "data:image/jpeg;base64,/9j/2Q==";
+    const post = (headers, photo) => fetch(`${base}/api/resource-photos`, { method: "POST", headers, body: JSON.stringify({ data: photo }) });
+    assert.equal((await post(requester, data)).status, 403);
+    assert.equal((await post(admin, "data:image/svg+xml;base64,PHN2Zz4=")).status, 400);
+    const upload = await post(admin, data);
+    assert.equal(upload.status, 201);
+    const { key } = await upload.json();
+    photoPath = path.join(__dirname, "..", "data", "resource-photos", key);
+    assert.equal((await fetch(`${base}/api/resource-photos/${key}`, { headers: requester })).status, 404);
+    const state = await (await fetch(`${base}/api/state`, { headers: admin })).json();
+    const resource = state.resources.find((item) => item.status === "Available" && item.type !== "Visitor");
+    assert.ok(resource);
+    resource.photoKey = key;
+    const saved = await fetch(`${base}/api/state`, { method: "PUT", headers: admin, body: JSON.stringify(state) });
+    assert.equal(saved.status, 200, await saved.text());
+    const preview = await fetch(`${base}/api/resource-photos/${key}`, { headers: requester });
+    assert.equal(preview.status, 200);
+    assert.equal((await preview.json()).url, data);
+    assert.equal((await fetch(`${base}/api/resource-photos/${key}`, { headers: otherOffice })).status, 404);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.writeFileSync(dbPath, originalDatabase);
+    if (photoPath && fs.existsSync(photoPath)) fs.unlinkSync(photoPath);
+  }
+});
+
 function daysFromTodayIso(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
@@ -22,7 +73,7 @@ function daysFromTodayIso(days) {
 }
 
 test("local login authenticates accounts and derives their assigned roles", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const server = createServer();
   server.listen(0, "127.0.0.1");
@@ -107,7 +158,7 @@ test("local login authenticates accounts and derives their assigned roles", asyn
 });
 
 test("local API expires overdue unfinished reservations and payment handoffs", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   const date = daysFromTodayIso(-1);
@@ -174,7 +225,7 @@ test("local API expires overdue unfinished reservations and payment handoffs", a
 });
 
 test("local API accepts requester cancellation and reschedule mutations", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   database.reservations.unshift(
@@ -261,7 +312,7 @@ test("local API accepts requester cancellation and reschedule mutations", async 
 });
 
 test("supporting office can approve final step and create owner payment handoff", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   const date = daysFromTodayIso(10);
@@ -287,7 +338,7 @@ test("supporting office can approve final step and create owner payment handoff"
     ]
   });
   fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
-  const { decideApprovalStep } = await import("../src/workflows.js");
+  const { decideApprovalStep } = await import("../src/domain/workflows.js");
   const server = createServer();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -346,7 +397,7 @@ test("supporting office can approve final step and create owner payment handoff"
 });
 
 test("local API lets requesters upload receipts and notify the payment office", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   database.reservations.unshift({
@@ -434,7 +485,7 @@ test("local API lets requesters upload receipts and notify the payment office", 
 });
 
 test("local API blocks reservations against hidden pending conflicts and reports alternatives", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   const date = "2099-09-10";
@@ -522,7 +573,7 @@ test("local API blocks reservations against hidden pending conflicts and reports
 });
 
 test("local API ignores expired reservations when checking availability conflicts", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   const date = daysFromTodayIso(10);
@@ -574,7 +625,7 @@ test("local API ignores expired reservations when checking availability conflict
 });
 
 test("single notification read only clears the clicked duplicate-safe id", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   database.notifications.unshift(
@@ -623,7 +674,7 @@ test("single notification read only clears the clicked duplicate-safe id", async
   }
 });
 test("super admin can mark visible notifications read through the local API", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   database.notifications.unshift(
@@ -674,7 +725,7 @@ test("super admin can mark visible notifications read through the local API", as
 });
 
 test("office admins can mark office notifications read without accessing private requester alerts", async () => {
-  const dbPath = path.join(__dirname, "..", "data", "db.json");
+  const dbPath = testDbPath;
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   database.notifications.unshift(

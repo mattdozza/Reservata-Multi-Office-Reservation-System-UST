@@ -1,4 +1,5 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { randomUUID } from "node:crypto";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { authenticatedUser, requireOffice, requireRole, ROLES } from "../lib/auth.mjs";
 import { HttpError, json, method, parseBody, requireFields, wrap } from "../lib/http.mjs";
@@ -42,9 +43,37 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       if (reservation.status === "Expired" || payment.status === "Expired") throw new HttpError(409, "This reservation expired before final confirmation.");
       if (reservation.status !== "For Payment" || payment.status !== "Awaiting Receipt") throw new HttpError(409, "This reservation is no longer awaiting a receipt.");
       const body = parseBody(event);
+      if (event.rawPath?.endsWith("/receipt-complete")) {
+        if (!body.objectKey || body.objectKey !== payment.receiptUploadKey) throw new HttpError(409, "Start a new receipt upload before confirming it.");
+        let uploaded;
+        try { uploaded = await s3.send(new HeadObjectCommand({ Bucket: process.env.RECEIPTS_BUCKET, Key: body.objectKey })); }
+        catch { throw new HttpError(409, "The receipt has not finished uploading. Please try again."); }
+        if (!uploaded.ContentLength || uploaded.ContentLength > 5 * 1024 * 1024 || !ALLOWED_RECEIPTS.has(uploaded.ContentType)) throw new HttpError(400, "Receipt must be a JPG, PNG, or PDF up to 5 MB.");
+        const uploadedAt = now();
+        const activity = activityRecord(user, "Receipt uploaded", reservation.id, reservation.office, reservation.id, payment.receiptUploadName);
+        const notification = notificationRecord(reservation.office, reservation.office, `${reservation.resourceName}: ${reservation.requester} uploaded a receipt for verification.`);
+        await repo.transact([
+          { ConditionCheck: {
+            TableName: TABLES.reservations, Key: { id: reservation.id },
+            ConditionExpression: "#status = :forPayment",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":forPayment": "For Payment" }
+          } },
+          { Update: {
+            TableName: TABLES.payments, Key: { id: payment.id },
+            UpdateExpression: "SET receipt = :receipt, receiptKey = :key, #status = :next, uploadedAt = :at, updatedAt = :at",
+            ConditionExpression: "#status = :awaiting AND receiptUploadKey = :key",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":receipt": payment.receiptUploadName, ":key": body.objectKey, ":next": "Pending Verification", ":awaiting": "Awaiting Receipt", ":at": uploadedAt }
+          } },
+          { Put: { TableName: TABLES.activity, Item: activity } },
+          { Put: { TableName: TABLES.notifications, Item: notification } }
+        ]);
+        return json(200, { objectKey: body.objectKey, status: "Pending Verification" });
+      }
       requireFields(body, ["filename", "contentType"]);
       if (!ALLOWED_RECEIPTS.has(body.contentType)) throw new HttpError(400, "Receipt must be a JPG, PNG, or PDF file.");
-      const objectKey = `receipts/${encodeURIComponent(user.email)}/${payment.id}/${safeFilename(body.filename)}`;
+      const objectKey = `receipts/${encodeURIComponent(user.email)}/${payment.id}/${randomUUID()}-${safeFilename(body.filename)}`;
       const command = new PutObjectCommand({
         Bucket: process.env.RECEIPTS_BUCKET,
         Key: objectKey,
@@ -52,9 +81,10 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         ServerSideEncryption: "AES256"
       });
       const uploadUrl = await signer(s3, command, { expiresIn: 300 });
-      await repo.update(TABLES.payments, { id: payment.id }, { receipt: objectKey, receiptKey: objectKey, status: "Pending Verification", updatedAt: now() }, {
-        ConditionExpression: "requesterEmail = :requesterEmail",
-        ExpressionAttributeValues: { ":requesterEmail": user.email }
+      await repo.update(TABLES.payments, { id: payment.id }, { receiptUploadKey: objectKey, receiptUploadName: safeFilename(body.filename), updatedAt: now() }, {
+        ConditionExpression: "requesterEmail = :requesterEmail AND #status = :awaiting",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: { ":requesterEmail": user.email, ":awaiting": "Awaiting Receipt" }
       });
       return json(200, { uploadUrl, objectKey, expiresIn: 300 });
     }
@@ -73,7 +103,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       const paymentStatus = body.verified ? "Verified" : "Rejected";
       const reservationStatus = body.verified ? "Confirmed" : "Rejected";
       const updatedAt = now();
-      const activity = activityRecord(user, body.verified ? "Payment verified" : "Payment rejected", reservation.id);
+      const activity = activityRecord(user, body.verified ? "Payment verified" : "Payment rejected", reservation.id, reservation.office, reservation.id, body.reason || "");
       const notification = notificationRecord(
         reservation.requesterEmail,
         reservation.requester,

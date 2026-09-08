@@ -1,5 +1,5 @@
-import { awsApi } from "../awsApi.js";
-import { nextId, nowLabel } from "../utils.js";
+import { awsApi } from "../services/awsApi.js";
+import { nextId, nowLabel } from "../shared/utils.js";
 import { MAX_RECEIPT_PREVIEW_BYTES, RESOLVED_RESERVATION_STATUSES, requireText } from "./shared.js";
 
 export const paymentMethods = {
@@ -18,7 +18,7 @@ export const paymentMethods = {
     if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type)) {
       throw new Error("Receipt must be a JPG, PNG, or PDF file.");
     }
-    if (file.size > MAX_RECEIPT_PREVIEW_BYTES && file.previewData) {
+    if (this.backendMode !== "aws" && file.size > MAX_RECEIPT_PREVIEW_BYTES) {
       throw new Error("Receipt preview must be under 700 KB for the local demo.");
     }
     const reservation = this.data.reservations.find((item) => item.id === id);
@@ -39,9 +39,10 @@ export const paymentMethods = {
       payment.receiptPreview = file?.previewData || "";
       payment.rejectionReason = "";
       payment.status = "Pending Verification";
+      payment.uploadedAt = nowLabel();
     }
     this.addNotification(reservation.office, `${reservation.resourceName}: ${reservation.requester} uploaded a receipt for verification.`, "Payment");
-    this.addActivity("Payment receipt uploaded", this.currentUser.name, reservation?.resourceName || id, payment?.receipt || "");
+    this.addActivity("Payment receipt uploaded", this.currentUser.name, reservation?.resourceName || id, payment?.receipt || "", reservation.id);
     await this.save(() => awsApi.uploadReceipt(payment?.id, file), previousData);
   },
 
@@ -51,7 +52,7 @@ export const paymentMethods = {
     if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type)) {
       throw new Error("Supporting documents must be JPG, PNG, or PDF files.");
     }
-    if (file.size > MAX_RECEIPT_PREVIEW_BYTES && file.previewData) {
+    if (this.backendMode !== "aws" && file.size > MAX_RECEIPT_PREVIEW_BYTES) {
       throw new Error("Document preview must be under 700 KB for the local demo.");
     }
     const reservation = this.data.reservations.find((item) => item.id === id);
@@ -73,7 +74,7 @@ export const paymentMethods = {
     };
     reservation.supportingDocuments = [document, ...(reservation.supportingDocuments || [])];
     this.addNotification(reservation.office, `${reservation.resourceName}: ${reservation.requester} uploaded a supporting document.`, "Reservation");
-    this.addActivity("Supporting document uploaded", this.currentUser.name, reservation.resourceName, document.name);
+    this.addActivity("Supporting document uploaded", this.currentUser.name, reservation.resourceName, document.name, reservation.id);
     await this.save(() => awsApi.uploadSupportingDocument(reservation.id, file), previousData);
   },
 
@@ -89,6 +90,8 @@ export const paymentMethods = {
     const cleanReason = verified ? "" : requireText(reason, "Receipt rejection reason", 8);
     const previousData = this.snapshot();
     payment.status = verified ? "Verified" : "Rejected";
+    payment.verifiedAt = verified ? nowLabel() : "";
+    payment.verifiedBy = verified ? this.currentUser.name : "";
     payment.rejectionReason = cleanReason;
     if (reservation) reservation.status = verified ? "Confirmed" : "Rejected";
     if (reservation) {
@@ -99,7 +102,7 @@ export const paymentMethods = {
         "Payment"
       );
     }
-    this.addActivity(verified ? "Payment verified" : "Payment rejected", this.currentUser.name, payment.reservationId, cleanReason || payment.receipt);
+    this.addActivity(verified ? "Payment verified" : "Payment rejected", this.currentUser.name, payment.reservationId, cleanReason || payment.receipt, reservation.id);
     await this.save(() => awsApi.verifyPayment(id, verified, cleanReason), previousData);
   }
 };

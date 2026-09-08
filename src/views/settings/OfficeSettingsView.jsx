@@ -1,7 +1,10 @@
+import ManagedForm from "../../components/ManagedForm.jsx";
 import { useEffect, useState } from "react";
 import { Archive, Edit3, Save } from "lucide-react";
 import { Badge, CardHeader, EmptyState } from "../../components/Common.jsx";
 import { PageTabs, TabPanel } from "../../components/PageTabs.jsx";
+import ResourcePhoto from "../../components/ResourcePhoto.jsx";
+import { prepareResourcePhoto } from "../../services/resourcePhotos.js";
 import {
   effectivePaymentDeadlineHours,
   generateAssetTag,
@@ -39,6 +42,8 @@ function resourceDraft(resource, store) {
 
 export function OfficeSettingsView({ store, onAction }) {
   const [activeTab, setActiveTab] = useState("inventory");
+  const [photoError, setPhotoError] = useState("");
+  const [readingPhoto, setReadingPhoto] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const selected = store.officeResources.find((item) => item.id === selectedId);
   const [draft, setDraft] = useState(resourceDraft(null, store));
@@ -93,12 +98,31 @@ export function OfficeSettingsView({ store, onAction }) {
     <div className="resource-settings">
       <PageTabs id="inventory" label="Resource management" tabs={[["inventory", "Office resources"], ["editor", selectedId ? "Edit resource" : "Add resource"]]} value={activeTab} onChange={setActiveTab} />
       <TabPanel id="inventory" name="editor" value={activeTab}>
-      <form className="card form-card" onSubmit={submit}>
+      <ManagedForm className="card form-card" onSubmit={submit} resetKey={selectedId} changed={Boolean(draft.photoData) || Boolean(selected && (draft.photoKey || "") !== (selected.photoKey || ""))}>
         <CardHeader
           title={selectedId ? "Edit resource" : "Add resource"}
           subtitle={`${store.officeScope} inventory and booking configuration`}
         />
         <div className="form-grid">
+          <div className="field span-2 resource-photo-editor">
+            <ResourcePhoto resource={draft} preview={draft.photoData} />
+            <div>
+              <label htmlFor="resource-photo">Resource photo</label>
+              <input id="resource-photo" type="file" accept="image/jpeg,image/png,image/webp" disabled={readingPhoto} aria-describedby="resource-photo-help" onChange={async (event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                setReadingPhoto(true); setPhotoError("");
+                try { update("photoData", await prepareResourcePhoto(file)); }
+                catch (error) { setPhotoError(error.message); }
+                finally { setReadingPhoto(false); }
+              }} />
+              <p id="resource-photo-help" className="field-help">JPG, PNG, or WebP. Maximum 5 MB.</p>
+              {readingPhoto && <p role="status">Preparing photo...</p>}
+              {photoError && <p className="field-error" role="alert">{photoError}</p>}
+              {(draft.photoData || draft.photoKey) && <button className="secondary-button" type="button" onClick={() => { update("photoData", ""); update("photoKey", ""); }}>Remove photo</button>}
+            </div>
+          </div>
           <div className="field span-2">
             <label htmlFor="resource-name">Name</label>
             <input
@@ -264,7 +288,7 @@ export function OfficeSettingsView({ store, onAction }) {
           )}
         </div>
         <div className="split-actions form-actions">
-          <button className="primary-button icon-text-button" type="submit">
+          <button className="primary-button icon-text-button" type="submit" disabled={readingPhoto}>
             <Save size={16} /> {selectedId ? "Save Changes" : "Add Resource"}
           </button>
           {selectedId && (
@@ -286,7 +310,7 @@ export function OfficeSettingsView({ store, onAction }) {
             </button>
           )}
         </div>
-      </form>
+      </ManagedForm>
       </TabPanel>
       <TabPanel id="inventory" name="inventory" value={activeTab}>
       <section className="card table-wrap">

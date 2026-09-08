@@ -1,5 +1,5 @@
 import { ROLE_IDS } from "../config.js";
-import { awsApi } from "../awsApi.js";
+import { awsApi } from "../services/awsApi.js";
 import { cleanText, isUstSsoEmail, requirePaymentDeadlineHours, requireText } from "./shared.js";
 
 export const adminMethods = {

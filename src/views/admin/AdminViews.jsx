@@ -1,8 +1,9 @@
+import ManagedForm from "../../components/ManagedForm.jsx";
 import { useState } from "react";
 import { Archive, Edit3 } from "lucide-react";
-import { PageTabs, TabPanel } from "../components/PageTabs.jsx";
-import { ActivityRows, Badge, CardHeader, EmptyState } from "../components/Common.jsx";
-import { downloadCsv, sortBy } from "../utils.js";
+import { PageTabs, TabPanel } from "../../components/PageTabs.jsx";
+import { ActivityRows, Badge, CardHeader, EmptyState } from "../../components/Common.jsx";
+import { downloadCsv, sortBy } from "../../shared/utils.js";
 
 const ROLE_OPTIONS = ["Requester", "Office Admin", "Super Admin", "OSG Admin", "OSG Requester"];
 export function OfficeRows({ store, onNavigate, onEdit, onArchive }) {
@@ -56,7 +57,7 @@ export function OfficesView({ store, onAction, onNavigate }) {
     <>
       <PageTabs id="offices" label="Office management" tabs={[["directory", "Office directory"], ["editor", selected ? "Edit office" : "Add office"]]} value={activeTab} onChange={setActiveTab} />
       <TabPanel id="offices" name="editor" value={activeTab}>
-      <form className="toolbar office-editor card form-card" onSubmit={submit}>
+      <ManagedForm className="toolbar office-editor card form-card" onSubmit={submit}>
         <div><strong>{selected ? "Edit office" : "Add office"}</strong><p className="toolbar-copy">Resource ownership and administrator assignment.</p></div>
         <div className="toolbar-group">
           <input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Office name" aria-label="Office name" required />
@@ -64,7 +65,7 @@ export function OfficesView({ store, onAction, onNavigate }) {
           <button className="primary-button" type="submit">{selected ? "Save Office" : "Add Office"}</button>
           {selected && <button className="secondary-button" onClick={() => { setSelected(null); setName(""); setStatus("Active"); }} type="button">Cancel</button>}
         </div>
-      </form>
+      </ManagedForm>
       </TabPanel>
       <TabPanel id="offices" name="directory" value={activeTab}>
       <div className="toolbar">
@@ -140,7 +141,7 @@ export function UsersView({ store, onAction }) {
     <>
       <PageTabs id="users" label="User management" tabs={[["directory", "Users & roles"], ["editor", "Add account"]]} value={activeTab} onChange={setActiveTab} />
       <TabPanel id="users" name="editor" value={activeTab}>
-      <form className="card form-card user-create-form" onSubmit={submit} noValidate>
+      <ManagedForm className="card form-card user-create-form" onSubmit={submit} noValidate>
         <CardHeader title="Provision SSO account" subtitle="Only Super Admins can register a UST SSO identity for RESERVATA access." />
         <div className="form-grid">
           <div className="field">
@@ -184,7 +185,7 @@ export function UsersView({ store, onAction }) {
         <div className="split-actions form-actions">
           <button className="primary-button" type="submit">Create Account</button>
         </div>
-      </form>
+      </ManagedForm>
       </TabPanel>
       <TabPanel id="users" name="directory" value={activeTab}>
       <div className="toolbar">

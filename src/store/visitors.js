@@ -1,5 +1,5 @@
-import { awsApi } from "../awsApi.js";
-import { nextId } from "../utils.js";
+import { awsApi } from "../services/awsApi.js";
+import { nextId } from "../shared/utils.js";
 import { cleanText, requireFutureDate, requireText, validPositiveNumber } from "./shared.js";
 
 export const visitorMethods = {

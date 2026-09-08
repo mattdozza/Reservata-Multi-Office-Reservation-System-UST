@@ -1,11 +1,11 @@
 # UST Font Files
 
-Place licensed web-font files in this folder. Prefer WOFF2 files, for example:
+Place licensed web-font files in `public/fonts/`. Prefer WOFF2 files, for example:
 
 - `USTSans-Regular.woff2`
 - `USTSans-Bold.woff2`
 
-Then add the following near the top of `styles.css` and use `"UST Sans"` in the appropriate `font-family` declaration:
+Then add the following near the top of `src/styles/base.css` and use `"UST Sans"` in the appropriate `font-family` declaration:
 
 ```css
 @font-face {

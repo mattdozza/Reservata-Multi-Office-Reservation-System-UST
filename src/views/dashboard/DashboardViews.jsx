@@ -1,7 +1,7 @@
-import { ActivityRows, CardHeader, ChartSummary, Metrics, ReservationRows, ResourceMiniRows } from "../components/Common.jsx";
-import { OfficeRows } from "./AdminViews.jsx";
-import { ApprovalRows } from "./ReservationViews.jsx";
-import { ArrivalRows, VisitorRows } from "./VisitorViews.jsx";
+import { ActivityRows, CardHeader, ChartSummary, Metrics, ReservationRows, ResourceMiniRows } from "../../components/Common.jsx";
+import { OfficeRows } from "../admin/AdminViews.jsx";
+import { ApprovalRows } from "../reservations/ReservationViews.jsx";
+import { ArrivalRows, VisitorRows } from "../visitors/VisitorViews.jsx";
 
 const COLORS = {
   blue: { accent: "#1a7d9d", color: "#1a7d9d" },
@@ -120,7 +120,7 @@ function OfficeAdminDashboard({ store, onAction }) {
       <div className="grid two-col section-gap">
         <article className="card">
           <CardHeader title="Approval queue" subtitle={`${store.officeScope} requests assigned to your office`} />
-          <ApprovalRows
+          <ApprovalRows store={store}
             items={store.actionableReservations}
             office={store.officeScope}
             onApprove={(id, stepId, reservation) => onAction(() => store.approveReservation(id, stepId), approvalSuccessMessage(reservation, stepId))}

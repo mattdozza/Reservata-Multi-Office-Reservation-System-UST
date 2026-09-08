@@ -1,5 +1,5 @@
-import { todayIso, tomorrowIso } from "../utils.js";
-import { REQUIREMENT_OPTIONS } from "../workflows.js";
+import { todayIso, tomorrowIso } from "../shared/utils.js";
+import { REQUIREMENT_OPTIONS } from "../domain/workflows.js";
 
 export const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment", "In Use"];
 export const RESOLVED_RESERVATION_STATUSES = ["Rejected", "Cancelled", "Completed", "Expired", "No Show"];

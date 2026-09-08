@@ -2,6 +2,17 @@
 
 Use this checklist before presenting the application. Run `npm run check` first and perform the browser workflow tests with a clean demonstration database.
 
+## Resource Photos, Drafts, and History
+
+The local API tests use a temporary database copy, not the running application's database. The browser checklist below remains manual; no end-to-end browser test runner has been added.
+
+1. As an Office Admin, open Office Settings and create or edit a resource. Select a JPG, PNG, or WebP up to 5 MB. Check the preview, save, reopen, and confirm the photo persists. Remove the photo and confirm the placeholder returns.
+2. As a requester, combine office, minimum capacity, payment, and schedule filters. Confirm the selected resource photo appears in both browsing and the reservation form. A failed availability check must not enable submission.
+3. Enter a reservation purpose and schedule, then navigate away. Cancel the unsaved-change warning to stay; accept it to leave. Return or refresh and confirm the draft is restored. Another account must not see it. Discard removes it; successful submission also clears it.
+4. Submit an invalid form and confirm field feedback. During saving, repeated clicks must not send another action. On receipt upload failure, the selected file stays available for retry.
+5. Open reservation details and the approval tracker. Confirm chronological submission, review, document, payment, and lifecycle history. Another reservation of the same resource must not contribute events.
+6. In the AWS test environment, interrupt a receipt PUT to S3. The payment must stay Awaiting Receipt. Retry successfully, then confirm Pending Verification and the owning office notification. Deploy the updated template and frontend together for the new completion endpoint.
+
 ## TC-001 Login and RBAC
 
 Steps:

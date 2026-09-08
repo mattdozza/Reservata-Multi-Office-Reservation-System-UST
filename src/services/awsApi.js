@@ -33,6 +33,8 @@ function body(value) {
 }
 
 export const awsApi = {
+  uploadResourcePhoto: (data) => request("/resource-photos", { method: "POST", body: body({ data }) }),
+  resourcePhoto: (key) => request(`/resource-photos/${encodeURIComponent(key)}`),
   bootstrap: () => request("/bootstrap"),
   resourceAvailability: (id, date, start, end) => request(`/resources/${encodeURIComponent(id)}/availability?${new URLSearchParams({ date, start, end })}`),
   createReservation: (values) => request("/reservations", { method: "POST", body: body(values) }),
@@ -69,8 +71,8 @@ export const awsApi = {
       headers: { "Content-Type": file.type, "x-amz-server-side-encryption": "AES256" },
       body: file
     });
-    if (!upload.ok) throw new Error("Receipt upload to S3 failed.");
-    return signed;
+      if (!upload.ok) throw new Error("Receipt upload to S3 failed.");
+      return request(`/payments/${encodeURIComponent(id)}/receipt-complete`, { method: "POST", body: body({ objectKey: signed.objectKey }) });
   },
   async uploadSupportingDocument(id, file) {
     if (!file) throw new Error("Select a supporting document first.");

@@ -19,6 +19,35 @@ Object.assign(process.env, {
 const { createHandler: createResourceHandler } = await import("../src/handlers/resources.mjs");
 const { createHandler: createReservationHandler } = await import("../src/handlers/reservations.mjs");
 const { createHandler: createAdminHandler } = await import("../src/handlers/admin.mjs");
+const { createHandler: createPaymentHandler } = await import("../src/handlers/payments.mjs");
+
+test("receipt verification begins only after S3 confirms upload completion", async () => {
+  const user = { email: "requester@ust.edu.ph", name: "Requester", role: "Requester", status: "Active" };
+  const payment = { id: "PAY-1", reservationId: "REQ-1", requesterEmail: user.email, status: "Awaiting Receipt", paymentDeadlineAt: "2099-01-01T07:00:00Z", paymentReminderSentAt: "2026-01-01T00:00:00Z" };
+  const reservation = { id: "REQ-1", requesterEmail: user.email, resourceName: "Hall", office: "Simbahayan", status: "For Payment", date: "2099-01-01", start: "08:00", end: "09:00" };
+  let transaction;
+  let uploaded = false;
+  const repo = {
+    get: async (table) => table === "Users" ? user : table === "Payments" ? payment : table === "Reservations" ? reservation : null,
+    update: async (table, key, values) => Object.assign(payment, values),
+    transact: async (value) => { transaction = value; }
+  };
+  const s3 = { send: async () => { if (!uploaded) throw new Error("Not found"); return { ContentLength: 1234, ContentType: "image/jpeg" }; } };
+  const handler = createPaymentHandler(repo, s3, async () => "https://example.invalid/upload");
+  const initial = await handler(event("POST", user.email, { filename: "receipt.jpg", contentType: "image/jpeg" }, { id: payment.id }, "/payments/PAY-1/receipt-upload"));
+  assert.equal(initial.statusCode, 200, initial.body);
+  assert.equal(payment.status, "Awaiting Receipt");
+  assert.equal(transaction, undefined);
+  const objectKey = JSON.parse(initial.body).objectKey;
+  const complete = () => handler(event("POST", user.email, { objectKey }, { id: payment.id }, "/payments/PAY-1/receipt-complete"));
+  assert.equal((await complete()).statusCode, 409);
+  assert.equal(payment.status, "Awaiting Receipt");
+  uploaded = true;
+  const result = await complete();
+  assert.equal(result.statusCode, 200, result.body);
+  assert.equal(transaction.find((item) => item.Update)?.Update.ExpressionAttributeValues[":next"], "Pending Verification");
+  assert.ok(transaction.some((item) => item.Put?.Item.reservationId === reservation.id));
+});
 
 function event(method, email, body, pathParameters = {}, rawPath = "/", queryStringParameters = {}) {
   return {

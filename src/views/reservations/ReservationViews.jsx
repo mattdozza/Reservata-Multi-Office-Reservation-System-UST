@@ -1,9 +1,14 @@
+import ManagedForm from "../../components/ManagedForm.jsx";
+import ResourcePhoto from "../../components/ResourcePhoto.jsx";
+import ReservationTimeline from "../../components/ReservationTimeline.jsx";
+import { readReservationDraft, reservationDraftKey } from "../../domain/reservations/drafts.js";
+import { reservationErrors } from "../../domain/reservations/validation.js";
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { ApprovalTrail, Badge, CardHeader, ConfirmModal, DetailGrid, DetailModal, EmptyState, ReceiptPreview, ReservationRows } from "../components/Common.jsx";
-import { compareDateTime, displayTimestamp, downloadCsv, formatDate, sortBy, todayIso, tomorrowIso } from "../utils.js";
-import { buildApprovalSteps, pendingApprovalSteps } from "../workflows.js";
-export { ResourcesView } from "./reservations/ResourcesView.jsx";
+import { ApprovalTrail, Badge, CardHeader, ConfirmModal, DetailGrid, DetailModal, EmptyState, ReceiptPreview, ReservationRows } from "../../components/Common.jsx";
+import { compareDateTime, displayTimestamp, downloadCsv, formatDate, sortBy, todayIso, tomorrowIso } from "../../shared/utils.js";
+import { buildApprovalSteps, pendingApprovalSteps } from "../../domain/workflows.js";
+export { ResourcesView } from "./ResourcesView.jsx";
 
 function formValues(form) {
   return Object.fromEntries(new FormData(form).entries());
@@ -22,16 +27,42 @@ function approvalSuccessMessage(reservation, stepId) {
   return "Approval recorded and route advanced.";
 }
 
-export function NewReservationView({ store, selectedResourceId, onAction, onNavigate }) {
+export function NewReservationView({ store, selectedResourceId, selectedSchedule, onAction, onNavigate }) {
+  const draftKey = reservationDraftKey(store.currentUser.email);
+  const [restored, setRestored] = useState(() => readReservationDraft(draftKey));
+  const [draftChanged, setDraftChanged] = useState(false);
+  const [draftError, setDraftError] = useState("");
+  const [purpose, setPurpose] = useState(restored?.purpose || "");
+  const [showErrors, setShowErrors] = useState(false);
+  const [draftVersion, setDraftVersion] = useState(0);
   const available = store.data.resources.filter(
     (item) => item.status === "Available" && ["Equipment", "Facility", "Vehicle"].includes(item.type)
   );
-  const [resourceId, setResourceId] = useState(selectedResourceId || available[0]?.id || "");
-  const [slot, setSlot] = useState({ date: tomorrowIso(), start: "08:00", end: "09:00", quantity: "1" });
+  const [resourceId, setResourceId] = useState(selectedResourceId || restored?.resourceId || available[0]?.id || "");
+  const [slot, setSlot] = useState(selectedSchedule ? { ...selectedSchedule, quantity: restored?.slot.quantity || "1" } : restored?.slot || { date: tomorrowIso(), start: "08:00", end: "09:00", quantity: "1" });
   const requirementOptions = store.requirementOptions;
   const requirementKey = requirementOptions.map((option) => option.id).join("|");
-  const [requirements, setRequirements] = useState(() => Object.fromEntries(requirementOptions.map((option) => [option.id, false])));
-  const selected = available.find((item) => item.id === resourceId) || available[0];
+  const [requirements, setRequirements] = useState(() => Object.fromEntries(requirementOptions.map((option) => [option.id, Boolean(restored?.requirements?.[option.id])])));
+  const selected = available.find((item) => item.id === resourceId);
+  const errors = reservationErrors({ ...slot, purpose }, selected);
+
+  useEffect(() => {
+    if (!draftChanged) return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ resourceId, slot, requirements, purpose }));
+      setDraftError("");
+    } catch { setDraftError("Draft could not be saved on this device. Keep this page open until you submit."); }
+  }, [draftChanged, draftKey, resourceId, slot, requirements, purpose]);
+
+  function discardDraft() {
+    if (!window.confirm("Discard this reservation draft?")) return;
+    localStorage.removeItem(draftKey);
+    setDraftChanged(false); setRestored(null); setPurpose(""); setShowErrors(false);
+    setResourceId(selectedResourceId || available[0]?.id || "");
+    setSlot({ date: tomorrowIso(), start: "08:00", end: "09:00", quantity: "1" });
+    setRequirements(Object.fromEntries(requirementOptions.map((option) => [option.id, false])));
+    setDraftVersion((value) => value + 1);
+  }
   const template = store.data.approvalTemplates.find((item) => item.id === selected?.workflowTemplateId && item.status === "Active")
     || store.data.approvalTemplates.find((item) => item.id === "WF-BASIC");
   const previewSteps = selected ? buildApprovalSteps(template, selected, requirements, "PREVIEW") : [];
@@ -55,12 +86,14 @@ export function NewReservationView({ store, selectedResourceId, onAction, onNavi
   }
 
   function selectSlot(option) {
+    setDraftChanged(true);
     setSlot((current) => ({ ...current, date: option.date, start: option.start, end: option.end }));
   }
 
   useEffect(() => {
     let active = true;
     setRemoteAvailability(null);
+    setCheckingAvailability(false);
     if (!resourceId || !slot.date || !slot.start || !slot.end) return () => { active = false; };
     setCheckingAvailability(true);
     store.fetchResourceAvailability(resourceId, slot.date, slot.start, slot.end)
@@ -69,7 +102,7 @@ export function NewReservationView({ store, selectedResourceId, onAction, onNavi
       })
       .catch((error) => {
         if (active) {
-          setRemoteAvailability({ ...localAvailability, message: error.message || localAvailability.message });
+          setRemoteAvailability({ ...localAvailability, status: "error", message: error.message || "Availability could not be checked. Try again." });
         }
       })
       .finally(() => {
@@ -80,17 +113,23 @@ export function NewReservationView({ store, selectedResourceId, onAction, onNavi
 
   async function submit(event) {
     event.preventDefault();
+    setShowErrors(true);
+    if (Object.keys(errors).length || !selected || checkingAvailability) return false;
     const saved = await onAction(() => store.submitReservation(formValues(event.currentTarget)), "Reservation request submitted.");
-    if (saved) onNavigate("myRequests");
+    if (saved) { localStorage.removeItem(draftKey); setDraftChanged(false); onNavigate("myRequests"); }
+    return saved;
   }
 
   return (
     <div className="grid two-col">
-      <form className="card form-card" onSubmit={submit}>
+      <ManagedForm className="card form-card" onSubmit={submit} resetKey={draftVersion} onChange={() => setDraftChanged(true)}>
+        {(restored || draftChanged) && <div className="draft-notice"><span>{draftError || (restored ? "Reservation draft restored. Not submitted." : "Draft saved on this device. Not submitted.")}</span><button type="button" className="secondary-button" onClick={discardDraft}>Discard draft</button></div>}
+        {!selected && <p className="field-error" role="alert">The saved resource is no longer available. Select another resource.</p>}
         <div className="form-grid">
           <div className="field span-2">
             <label htmlFor="resourceId">Resource</label>
             <select id="resourceId" name="resourceId" className="select" value={resourceId} onChange={(event) => setResourceId(event.target.value)} required>
+              {!selected && <option value={resourceId}>Select an available resource</option>}
               {available.map((item) => (
                 <option value={item.id} key={item.id}>
                   {item.name} · {item.type}{item.requiresPayment ? ` · PHP ${item.fee}` : ""}
@@ -116,11 +155,14 @@ export function NewReservationView({ store, selectedResourceId, onAction, onNavi
               </label>
             ))}
           </fieldset>
-          <div className="field span-2"><label htmlFor="purpose">Purpose</label><textarea id="purpose" name="purpose" className="textarea" required placeholder="Describe the activity, class, event, or office purpose." /></div>
+          <div className="field span-2"><label htmlFor="purpose">Purpose</label><textarea id="purpose" name="purpose" className="textarea" minLength={10} value={purpose} onChange={(event) => setPurpose(event.target.value)} required placeholder="Describe the activity, class, event, or office purpose." />{showErrors && errors.purpose && <small className="field-error">{errors.purpose}</small>}</div>
         </div>
-        <div className="split-actions form-actions"><button className="primary-button" type="submit" disabled={!available.length || availability.status !== "available"}>Submit Request</button></div>
-      </form>
+        {showErrors && Object.entries(errors).filter(([field]) => field !== "purpose").map(([field, message]) => <p className="field-error" key={field}><a href={`#${field}`}>{message}</a></p>)}
+        {slot.start >= slot.end && <p className="field-error" role="alert">End time must be after start time.</p>}
+        <div className="split-actions form-actions"><button className="primary-button" type="submit" disabled={!selected || checkingAvailability || availability.status !== "available"}>{checkingAvailability ? "Checking availability..." : "Submit Request"}</button></div>
+      </ManagedForm>
       <aside className="stack">
+        {selected && <ResourcePhoto resource={selected} />}
         <section className="card">
           <CardHeader title="Live availability" subtitle={selected ? `${selected.name} · capacity ${selected.capacity}` : "Select a resource"} />
           <div className={`availability-panel availability-${availability.status}`}>
@@ -240,7 +282,7 @@ export function ReservationsView({ store, onAction }) {
   );
 }
 
-export function ApprovalRows({ items, office, onApprove, onReject }) {
+export function ApprovalRows({ store, items, office, onApprove, onReject }) {
   const [selected, setSelected] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [rejection, setRejection] = useState(null);
@@ -317,6 +359,7 @@ export function ApprovalRows({ items, office, onApprove, onReject }) {
             ["Payment", paymentRoutingText(selected, office)]
           ]} />
           <ApprovalTrail reservation={selected} />
+          {store && <ReservationTimeline store={store} reservation={selected} />}
         </DetailModal>
       )}
       {rejection && (
@@ -368,7 +411,7 @@ function ReasonModal({ title, message, confirmLabel, details, onConfirm, onCance
   );
 }
 
-function ApprovalRouteRows({ items }) {
+function ApprovalRouteRows({ store, items }) {
   const [selected, setSelected] = useState(null);
   const routed = items.filter((item) => item.approvalSteps?.length);
   if (!routed.length) return <EmptyState>No routed reservation requests yet.</EmptyState>;
@@ -397,6 +440,7 @@ function ApprovalRouteRows({ items }) {
             ["Payment", paymentRoutingText(selected, selected.office)]
           ]} />
           <ApprovalTrail reservation={selected} />
+          <ReservationTimeline reservation={selected} payments={store.data.payments} activity={store.data.activity} />
         </DetailModal>
       )}
     </>
@@ -440,7 +484,7 @@ export function ApprovalsView({ store, onAction }) {
             {statusOptions.map((item) => <option key={item}>{item}</option>)}
           </select>
         </div>
-        <ApprovalRows
+        <ApprovalRows store={store}
           items={store.actionableReservations.map((item) => ({ ...item, isOverdue: store.isReservationOverdue(item) })).filter((item) => filtered.some((route) => route.id === item.id))}
           office={store.officeScope}
           onApprove={(id, stepId, reservation) => onAction(() => store.approveReservation(id, stepId), approvalSuccessMessage(reservation, stepId))}
@@ -449,7 +493,7 @@ export function ApprovalsView({ store, onAction }) {
       </article>
       <article className="card">
         <CardHeader title="Approval route tracker" subtitle="Full approval routes stay visible after your decision is recorded." />
-        <ApprovalRouteRows items={filtered} />
+        <ApprovalRouteRows store={store} items={filtered} />
       </article>
     </div>
   );

@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { awsBackendConfigured } from "../services/awsApi.js";
 import { AlertTriangle, CheckCircle2, FileText, Info, Upload, X } from "lucide-react";
-import { badgeClass, displayTimestamp, formatDate, tomorrowIso } from "../utils.js";
-import { approvalProgress } from "../workflows.js";
+import { badgeClass, displayTimestamp, formatDate, tomorrowIso } from "../shared/utils.js";
+import { approvalProgress } from "../domain/workflows.js";
+import ReservationTimeline from "./ReservationTimeline.jsx";
+import ResourcePhoto from "./ResourcePhoto.jsx";
 
 export function Badge({ status, children, className = "" }) {
   return <span className={`badge ${badgeClass(status)} ${className}`.trim()}>{children ?? status}</span>;
@@ -125,21 +128,24 @@ export function DetailGrid({ items }) {
   );
 }
 
-function ReservationDetails({ store, reservation }) {
-  const payment = store.data.payments.find((item) => item.reservationId === reservation.id || item.id === reservation.paymentId);
-  const activity = store.data.activity.filter((item) => [reservation.resourceName, reservation.id].includes(item.target) || String(item.target || "").includes(reservation.resourceName));
+export function ReservationDetails({ store, reservation }) {
+  const payment = store.data.payments.find((item) => item.id === reservation.paymentId)
+    || store.data.payments.filter((item) => item.reservationId === reservation.id).sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0))[0];
+  const resource = store.data.resources.find((item) => item.id === reservation.resourceId);
   return (
     <>
+      {resource?.photoKey && <ResourcePhoto resource={resource} />}
       <DetailGrid items={[
         ["Request ID", reservation.id],
         ["Requester", reservation.requester],
         ["Resource", reservation.resourceName],
         ["Office", reservation.office],
         ["Schedule", `${formatDate(reservation.date)} ${reservation.start}-${reservation.end}`],
-        ["Warning", reservation.status === "Expired" ? "Reservation expired because the scheduled time passed before final confirmation." : store.isReservationOverdue(reservation) ? "Scheduled time has passed without final confirmation or rejection." : "None"],
+        ["Warning", reservation.status === "Expired" ? reservation.expiryReason || "Reservation expired before final confirmation." : store.isReservationOverdue(reservation) ? "Scheduled time has passed without final confirmation or rejection." : "None"],
         ["Quantity / attendees", reservation.quantity],
         ["Payment", reservation.requiresPayment ? payment?.status || "Required" : "Not required"],
         ["Decision reason", reservation.rejectionReason || "None"],
+        ["Cancellation / expiry reason", reservation.cancellationReason || reservation.expiryReason || reservation.overrideReason || "None"],
         ["Purpose", reservation.purpose]
       ]} />
       <ApprovalTrail reservation={reservation} />
@@ -151,6 +157,7 @@ function ReservationDetails({ store, reservation }) {
             ["Amount", `PHP ${payment.amount}`],
             ["Receipt", payment.receipt],
             ["Status", payment.status],
+            ["Receipt deadline", payment.paymentDeadlineAt ? displayTimestamp(payment.paymentDeadlineAt) : "Not assigned"],
             ["Receipt note", payment.rejectionReason || "None"]
           ]} />
           <ReceiptPreview payment={payment} />
@@ -170,18 +177,16 @@ function ReservationDetails({ store, reservation }) {
           ))}
         </div>
       )}
-      <div className="detail-section">
-        <h3>Activity</h3>
-        {activity.length ? activity.slice(0, 5).map((item, index) => (
-          <p className="detail-note" key={`${item.time}-${index}`}>{item.action} · {item.actor} · {displayTimestamp(item.time)}{item.details ? ` · ${item.details}` : ""}</p>
-        )) : <p className="detail-note">No activity records tied to this request yet.</p>}
-      </div>
+      <ReservationTimeline store={store} reservation={reservation} />
     </>
   );
 }
 
 function receiptPayload(file) {
-  if (!file || file.size > 700_000 || !["image/jpeg", "image/png", "application/pdf"].includes(file.type)) return Promise.resolve(file);
+  if (!file || !["image/jpeg", "image/png", "application/pdf"].includes(file.type)) return Promise.reject(new Error("Choose a JPG, PNG, or PDF file."));
+  const maximum = awsBackendConfigured ? 5_000_000 : 700_000;
+  if (!file.size || file.size > maximum) return Promise.reject(new Error(`Choose a file smaller than ${awsBackendConfigured ? "5 MB" : "700 KB"}.`));
+  if (file.size > 700_000) return Promise.resolve(file);
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -274,10 +279,36 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload, onCa
   const [pendingDocument, setPendingDocument] = useState(null);
   const [cancellation, setCancellation] = useState(null);
   const [reschedule, setReschedule] = useState(null);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const uploadLock = useRef(false);
+
+  async function chooseUpload(event, item, setter) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadError("");
+    try { setter({ item, file: await receiptPayload(file) }); }
+    catch (error) { setUploadError(error.message); }
+  }
+
+  async function confirmUpload(kind) {
+    if (uploadLock.current) return;
+    uploadLock.current = true; setUploadBusy(true); setUploadError("");
+    const current = kind === "receipt" ? pendingReceipt : pendingDocument;
+    try {
+      const saved = await (kind === "receipt" ? onUpload : onDocumentUpload)(current.item.id, current.file);
+      if (saved === false) setUploadError("Upload failed. Your file is still selected. Please try again.");
+      else if (kind === "receipt") setPendingReceipt(null);
+      else setPendingDocument(null);
+    } catch (error) { setUploadError(error.message); }
+    finally { uploadLock.current = false; setUploadBusy(false); }
+  }
   if (!items.length) return <EmptyState>No reservation requests yet.</EmptyState>;
 
   return (
     <>
+      {uploadError && !pendingReceipt && !pendingDocument && <p className="field-error" role="alert">{uploadError}</p>}
       {items.map((item) => (
         <div className="list-item" key={item.id}>
           <div>
@@ -304,11 +335,7 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload, onCa
                 <input
                   type="file"
                   accept="image/jpeg,image/png,application/pdf"
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0];
-                    if (file) setPendingDocument({ item, file: await receiptPayload(file) });
-                    event.target.value = "";
-                  }}
+                  onChange={(event) => chooseUpload(event, item, setPendingDocument)}
                 />
               </label>
             )}
@@ -318,11 +345,7 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload, onCa
                 <input
                   type="file"
                   accept="image/jpeg,image/png,application/pdf"
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0];
-                    if (file) setPendingReceipt({ item, file: await receiptPayload(file) });
-                    event.target.value = "";
-                  }}
+                  onChange={(event) => chooseUpload(event, item, setPendingReceipt)}
                 />
               </label>
             )}
@@ -335,7 +358,7 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload, onCa
         </DetailModal>
       )}
       {pendingReceipt && (
-        <DetailModal title="Upload receipt?" subtitle={`${pendingReceipt.item.resourceName} · ${pendingReceipt.item.id}`} onClose={() => setPendingReceipt(null)}>
+        <DetailModal title="Upload receipt?" subtitle={`${pendingReceipt.item.resourceName} · ${pendingReceipt.item.id}`} onClose={() => { if (!uploadLock.current) setPendingReceipt(null); }}>
           <div className="receipt-confirm">
             <div className="receipt-file-summary">
               <FileText size={20} aria-hidden="true" />
@@ -350,24 +373,22 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload, onCa
               receiptType: pendingReceipt.file.type
             }} />
             <div className="split-actions form-actions">
-              <button className="secondary-button" onClick={() => setPendingReceipt(null)} type="button">Cancel</button>
+              <button className="secondary-button" disabled={uploadBusy} onClick={() => setPendingReceipt(null)} type="button">Cancel</button>
               <button
                 className="primary-button icon-text-button"
-                onClick={async () => {
-                  const current = pendingReceipt;
-                  setPendingReceipt(null);
-                  await onUpload(current.item.id, current.file);
-                }}
+                disabled={uploadBusy}
+                onClick={() => confirmUpload("receipt")}
                 type="button"
               >
-                <Upload size={16} /> Upload Receipt
+                <Upload size={16} /> {uploadBusy ? "Uploading..." : "Upload Receipt"}
               </button>
             </div>
+            {uploadError && <p className="field-error" role="alert">{uploadError}</p>}
           </div>
         </DetailModal>
       )}
       {pendingDocument && (
-        <DetailModal title="Upload supporting document?" subtitle={`${pendingDocument.item.resourceName} · ${pendingDocument.item.id}`} onClose={() => setPendingDocument(null)}>
+        <DetailModal title="Upload supporting document?" subtitle={`${pendingDocument.item.resourceName} · ${pendingDocument.item.id}`} onClose={() => { if (!uploadLock.current) setPendingDocument(null); }}>
           <div className="receipt-confirm">
             <div className="receipt-file-summary">
               <FileText size={20} aria-hidden="true" />
@@ -382,19 +403,17 @@ export function ReservationRows({ store, items, onUpload, onDocumentUpload, onCa
               receiptType: pendingDocument.file.type
             }} />
             <div className="split-actions form-actions">
-              <button className="secondary-button" onClick={() => setPendingDocument(null)} type="button">Cancel</button>
+              <button className="secondary-button" disabled={uploadBusy} onClick={() => setPendingDocument(null)} type="button">Cancel</button>
               <button
                 className="primary-button icon-text-button"
-                onClick={async () => {
-                  const current = pendingDocument;
-                  setPendingDocument(null);
-                  await onDocumentUpload(current.item.id, current.file);
-                }}
+                disabled={uploadBusy}
+                onClick={() => confirmUpload("document")}
                 type="button"
               >
-                <Upload size={16} /> Upload Document
+                <Upload size={16} /> {uploadBusy ? "Uploading..." : "Upload Document"}
               </button>
             </div>
+            {uploadError && <p className="field-error" role="alert">{uploadError}</p>}
           </div>
         </DetailModal>
       )}

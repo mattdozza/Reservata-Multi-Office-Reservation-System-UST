@@ -8,11 +8,11 @@ import {
   restoreLocalAccount,
   saveDatabase,
   saveSession
-} from "../api.js";
-import { awsApi, awsBackendConfigured, hasSsoAccessToken, setSsoAccessToken } from "../awsApi.js";
-import { DEFAULT_DATA } from "../defaultData.js";
-import { clone, nextId, nowLabel } from "../utils.js";
-import { hydrateLegacyReservation } from "../workflows.js";
+} from "../services/api.js";
+import { awsApi, awsBackendConfigured, hasSsoAccessToken, setSsoAccessToken } from "../services/awsApi.js";
+import { DEFAULT_DATA } from "../data/defaultData.js";
+import { clone, nextId, nowLabel } from "../shared/utils.js";
+import { hydrateLegacyReservation } from "../domain/workflows.js";
 import { adminMethods } from "./admin.js";
 import { notificationMethods } from "./notifications.js";
 import { paymentMethods } from "./payments.js";
@@ -228,13 +228,14 @@ export class ReservataStore {
     });
   }
 
-  addActivity(action, actor, target, details = "") {
+  addActivity(action, actor, target, details = "", reservationId = "") {
     this.data.activity.unshift({
       id: nextId("ACT"),
       action,
       actor,
       target,
       details,
+      ...(reservationId ? { reservationId } : {}),
       time: nowLabel()
     });
   }

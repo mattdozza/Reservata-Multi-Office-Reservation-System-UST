@@ -4,6 +4,9 @@ import { repository } from "../lib/repository.mjs";
 import { activityRecord, createId, now } from "../lib/records.mjs";
 import { MAX_PAYMENT_DEADLINE_HOURS, MIN_PAYMENT_DEADLINE_HOURS } from "../lib/reservationLifecycle.mjs";
 import { TABLES } from "../lib/tables.mjs";
+import { S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { photoCommand, savePhoto, validatePhotoOwner, validPhotoKey } from "../lib/resourcePhotos.mjs";
 
 const STATUSES = ["Available", "Reserved", "In Use", "Under Maintenance", "Unavailable"];
 const TYPES = ["Facility", "Vehicle", "Equipment", "Visitor Service"];
@@ -66,10 +69,23 @@ function assertUniqueAssetTag(resources, assetTag, currentId = "") {
   }
 }
 
-export function createHandler(repo = repository) {
+export function createHandler(repo = repository, s3 = new S3Client({}), signer = getSignedUrl) {
   return wrap(async (event) => {
     const user = await authenticatedUser(event, repo);
     const requestMethod = method(event);
+    const rawPath = event.rawPath || event.path || "";
+    if (rawPath === "/resource-photos" && requestMethod === "POST") {
+      requireRole(user, ROLES.officeAdmin);
+      return json(201, await savePhoto(s3, user, parseBody(event).data));
+    }
+    if (rawPath.startsWith("/resource-photos/") && requestMethod === "GET") {
+      const key = event.pathParameters?.id || "";
+      if (!validPhotoKey(key)) throw new HttpError(404, "Resource photo not found.");
+      const resource = (await repo.scan(TABLES.resources)).find((item) => item.photoKey === key);
+      const visible = resource && (user.role === ROLES.superAdmin || (user.role === ROLES.officeAdmin && resource.office === user.office) || (user.role === ROLES.requester && resource.status !== "Archived" && resource.type !== "Visitor Service"));
+      if (!visible) throw new HttpError(404, "Resource photo not found.");
+      return json(200, { url: await signer(s3, photoCommand(key), { expiresIn: 3600 }) });
+    }
 
     if (requestMethod === "GET") {
       let items;
@@ -95,6 +111,7 @@ export function createHandler(repo = repository) {
       if (!workflow || workflow.status !== "Active") throw new HttpError(400, "Select an active approval workflow.");
       const createdAt = now();
       const resource = {
+        photoKey: validatePhotoOwner(body.photoKey, user),
         id: createId("R"),
         assetTag,
         name: String(body.name).trim(),
@@ -138,6 +155,7 @@ export function createHandler(repo = repository) {
         if (!workflow || workflow.status !== "Active") throw new HttpError(400, "Select an active approval workflow.");
       }
       const changes = statusOnly ? { status: body.status, updatedAt } : {
+        photoKey: body.photoKey === undefined ? undefined : validatePhotoOwner(body.photoKey, user),
         name: body.name === undefined ? undefined : String(body.name).trim(),
         assetTag,
         type: body.type,

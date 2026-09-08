@@ -71,14 +71,20 @@ Additional requirements are requester-selected routing triggers. For example, se
 
 ```txt
 index.html                 Vite HTML entry point
-styles.css                 Shared responsive design
 src/main.jsx               React entry point
 src/App.jsx                Application state and guarded navigation
 src/components/            Login, application shell, and shared UI
-src/views/                 Role dashboards and workflow screens
-src/store.js               Business rules and data mutations
-src/api.js                 Persistence adapter
+src/views/                 Screens grouped by admin, dashboard, reservations, settings, visitors
+src/services/              Local/AWS API adapters, SSO, and photo processing/uploads
+src/domain/                Workflow rules and reservation draft, timeline, validation helpers
+src/shared/                General utilities and unsaved-form navigation guards
+src/data/                  Frontend demonstration defaults
+src/styles/                Base stylesheet and portal overrides
+src/store.js               Public entry point for the store
+src/store/                 Business rules and data mutations grouped by domain
 src/config.js              Roles, navigation, permissions, and page titles
+public/                    Source static assets copied unchanged into each build
+dist/                      Generated deployment output; do not edit (git-ignored)
 server.js                  Local development API
 dev-server.js              One-command local frontend/API launcher
 aws/template.yaml          SAM infrastructure for API Gateway, Lambda, DynamoDB, and S3
@@ -90,6 +96,8 @@ docs/                      Architecture, API, schema, flows, tests, and traceabi
 ```
 
 ## Current and Target Architecture
+
+See [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for where to add or edit files. `public/images/` and `dist/images/` intentionally contain the same assets after a build: edit only `public/`, then run `npm run build`. The build also produces bundled JavaScript, CSS, and HTML in `dist/`. See [docs/FONTS.md](docs/FONTS.md) for optional licensed fonts.
 
 The application contains both a complete local React demonstration and deployable AWS backend infrastructure. It does not claim that an AWS stack or University SSO client is already provisioned.
 

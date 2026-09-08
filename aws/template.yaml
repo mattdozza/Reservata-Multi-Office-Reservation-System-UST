@@ -103,12 +103,16 @@ Resources:
       CodeUri: backend/
       Handler: src/handlers/resources.handler
       Policies:
+        - S3ReadPolicy: { BucketName: !Ref ReceiptsBucket }
+        - S3WritePolicy: { BucketName: !Ref ReceiptsBucket }
         - DynamoDBCrudPolicy: { TableName: !Ref ResourcesTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
         - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
       Events:
         ListResources: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resources, Method: GET } }
+        UploadPhoto: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resource-photos, Method: POST } }
+        ReadPhoto: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resource-photos/{id}", Method: GET } }
         CreateResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resources, Method: POST } }
         EditResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}", Method: PATCH } }
         UpdateResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}/status", Method: PATCH } }
@@ -143,8 +147,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: backend/
-      Handler: src/handlers/payments.handler
-      Policies:
+        Handler: src/handlers/payments.handler
+        Policies:
+          - S3ReadPolicy: { BucketName: !Ref ReceiptsBucket }
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
         - DynamoDBCrudPolicy: { TableName: !Ref PaymentsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ReservationsTable }
@@ -154,7 +159,8 @@ Resources:
         - S3WritePolicy: { BucketName: !Ref ReceiptsBucket }
       Events:
         ListPayments: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /payments, Method: GET } }
-        ReceiptUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-upload", Method: POST } }
+          ReceiptUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-upload", Method: POST } }
+          ReceiptComplete: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-complete", Method: POST } }
         VerifyPayment: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/verification", Method: PATCH } }
 
   VisitorFunction:

@@ -1,5 +1,5 @@
-import { ActivityView, OfficesView, ProfileView, UsersView } from "./AdminViews.jsx";
-import DashboardView from "./DashboardViews.jsx";
+import { ActivityView, OfficesView, ProfileView, UsersView } from "./admin/AdminViews.jsx";
+import DashboardView from "./dashboard/DashboardViews.jsx";
 import {
   ApprovalsView,
   CalendarView,
@@ -8,8 +8,8 @@ import {
   PaymentsView,
   ReservationsView,
   ResourcesView
-} from "./ReservationViews.jsx";
-import { OfficeSettingsView, WorkflowsView } from "./SettingsViews.jsx";
+} from "./reservations/ReservationViews.jsx";
+import { OfficeSettingsView, WorkflowsView } from "./settings/SettingsViews.jsx";
 import {
   ArrivalsView,
   MyVisitorRequestsView,
@@ -17,14 +17,14 @@ import {
   ParkingView,
   VisitorRecordsView,
   VisitorRequestsView
-} from "./VisitorViews.jsx";
+} from "./visitors/VisitorViews.jsx";
 
-export default function ViewRouter({ store, selectedResourceId, onAction, onNavigate, onReserve }) {
+export default function ViewRouter({ store, selectedResourceId, selectedSchedule, onAction, onNavigate, onReserve }) {
   const props = { store, onAction, onNavigate, onReserve };
   const views = {
     dashboard: <DashboardView {...props} />,
     resources: <ResourcesView {...props} />,
-    newRequest: <NewReservationView {...props} selectedResourceId={selectedResourceId} />,
+    newRequest: <NewReservationView {...props} selectedResourceId={selectedResourceId} selectedSchedule={selectedSchedule} />,
     myRequests: <ReservationsView {...props} />,
     calendar: <CalendarView {...props} />,
     notifications: <NotificationsView {...props} />,

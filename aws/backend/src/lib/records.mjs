@@ -8,7 +8,7 @@ export function now() {
   return new Date().toISOString();
 }
 
-export function activityRecord(user, action, target, office = user.office) {
+export function activityRecord(user, action, target, office = user.office, reservationId = "", details = "") {
   const createdAt = now();
   return {
     id: createId("ACT"),
@@ -17,6 +17,8 @@ export function activityRecord(user, action, target, office = user.office) {
     actorEmail: user.email,
     target,
     office,
+    ...(reservationId ? { reservationId } : {}),
+    details,
     createdAt,
     time: createdAt
   };

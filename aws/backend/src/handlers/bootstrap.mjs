@@ -71,6 +71,11 @@ export function createHandler(repo = repository) {
     }
 
     await expireReservations(repo, data.reservations, data.payments, data.resources, data.systemSettings[0]);
+    if (user.role !== ROLES.superAdmin && data.reservations.length) {
+      const ids = new Set(data.reservations.map((item) => item.id));
+      const linked = (await repo.scan(TABLES.activity)).filter((item) => ids.has(item.reservationId));
+      data.activity = [...new Map([...data.activity, ...linked].map((item) => [item.id, item])).values()];
+    }
 
     for (const key of ["reservations", "payments", "visitors", "notifications", "activity"]) {
       data[key] = newestFirst(data[key]);

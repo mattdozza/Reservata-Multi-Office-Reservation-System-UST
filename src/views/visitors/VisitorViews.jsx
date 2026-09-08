@@ -1,7 +1,8 @@
+import ManagedForm from "../../components/ManagedForm.jsx";
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { Badge, CardHeader, DetailGrid, DetailModal, EmptyState } from "../components/Common.jsx";
-import { downloadCsv, formatDate, sortBy, todayIso } from "../utils.js";
+import { Badge, CardHeader, DetailGrid, DetailModal, EmptyState } from "../../components/Common.jsx";
+import { downloadCsv, formatDate, sortBy, todayIso } from "../../shared/utils.js";
 
 function formValues(form) {
   return Object.fromEntries(new FormData(form).entries());
@@ -266,7 +267,7 @@ export function NewVisitorView({ store, onAction, onNavigate }) {
   }
 
   return (
-    <form className="card form-card" onSubmit={submit}>
+    <ManagedForm className="card form-card" onSubmit={submit}>
       <div className="form-grid">
         <div className="field"><label htmlFor="visitor">Visitor / group name</label><input id="visitor" name="visitor" className="input" required /></div>
         <div className="field"><label htmlFor="organization">Organization</label><input id="organization" name="organization" className="input" required /></div>
@@ -278,7 +279,7 @@ export function NewVisitorView({ store, onAction, onNavigate }) {
         <div className="field span-2"><label htmlFor="visitorPurpose">Purpose</label><textarea id="visitorPurpose" name="visitorPurpose" className="textarea" required /></div>
       </div>
       <div className="split-actions form-actions"><button className="primary-button" type="submit">Submit to OSG</button></div>
-    </form>
+    </ManagedForm>
   );
 }
 

@@ -23,7 +23,7 @@ function daysFromTodayIso(days) {
 }
 
 test("venue workflow activates conditional reviews in parallel before payment", async () => {
-  const { buildApprovalSteps, decideApprovalStep } = await import("../src/workflows.js");
+  const { buildApprovalSteps, decideApprovalStep } = await import("../src/domain/workflows.js");
   const template = {
     steps: [
       { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1, condition: "always" },
@@ -49,7 +49,7 @@ test("venue workflow activates conditional reviews in parallel before payment", 
 });
 
 test("a rejected approval stops the remaining route", async () => {
-  const { buildApprovalSteps, decideApprovalStep } = await import("../src/workflows.js");
+  const { buildApprovalSteps, decideApprovalStep } = await import("../src/domain/workflows.js");
   const reservation = {
     requiresPayment: false,
     status: "Under Owner Review",
@@ -64,7 +64,7 @@ test("a rejected approval stops the remaining route", async () => {
 });
 
 test("client-created IDs do not depend on a role-scoped collection length", async () => {
-  const { displayTimestamp, nextId } = await import("../src/utils.js");
+  const { displayTimestamp, nextId } = await import("../src/shared/utils.js");
   const ids = new Set(Array.from({ length: 100 }, () => nextId("REQ-2026")));
   assert.equal(ids.size, 100);
   assert.ok([...ids].every((id) => /^REQ-2026-[A-F0-9]{8}$/.test(id)));
@@ -137,7 +137,7 @@ test("requesters must reserve at least one day before use", async () => {
   };
 
   const { ReservataStore } = await import("../src/store.js");
-  const { todayIso } = await import("../src/utils.js");
+  const { todayIso } = await import("../src/shared/utils.js");
   const store = new ReservataStore();
   store.apiAvailable = false;
   store.localUser = {
@@ -172,7 +172,7 @@ test("reservation availability blocks pending overlaps and suggests alternatives
   };
 
   const { ReservataStore } = await import("../src/store.js");
-  const { tomorrowIso } = await import("../src/utils.js");
+  const { tomorrowIso } = await import("../src/shared/utils.js");
   const date = tomorrowIso();
   const store = new ReservataStore();
   store.apiAvailable = false;

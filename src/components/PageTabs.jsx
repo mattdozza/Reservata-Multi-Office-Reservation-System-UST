@@ -1,3 +1,5 @@
+import { confirmLeaveForms } from "../shared/formSafety.js";
+
 export function PageTabs({ id, label, tabs, value, onChange }) {
   return (
     <div className="page-tabs" role="tablist" aria-label={label}>
@@ -10,11 +12,12 @@ export function PageTabs({ id, label, tabs, value, onChange }) {
           aria-selected={value === key}
           aria-controls={`${id}-panel-${key}`}
           tabIndex={value === key ? 0 : -1}
-          onClick={() => onChange(key)}
+          onClick={() => { if (key === value || confirmLeaveForms()) onChange(key); }}
           onKeyDown={(event) => {
             const offsets = { ArrowRight: 1, ArrowLeft: -1, Home: -index, End: tabs.length - index - 1 };
             if (!(event.key in offsets)) return;
             event.preventDefault();
+            if (!confirmLeaveForms()) return;
             const next = tabs[(index + offsets[event.key] + tabs.length) % tabs.length][0];
             onChange(next);
             document.getElementById(`${id}-tab-${next}`)?.focus();

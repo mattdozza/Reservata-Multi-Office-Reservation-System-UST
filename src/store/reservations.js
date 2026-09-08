@@ -1,7 +1,7 @@
-import { loadResourceAvailability } from "../api.js";
-import { awsApi } from "../awsApi.js";
-import { compareDateTime, nextId, nowLabel, tomorrowIso } from "../utils.js";
-import { buildApprovalSteps, decideApprovalStep, pendingApprovalSteps } from "../workflows.js";
+import { loadResourceAvailability } from "../services/api.js";
+import { awsApi } from "../services/awsApi.js";
+import { compareDateTime, nextId, nowLabel, tomorrowIso } from "../shared/utils.js";
+import { buildApprovalSteps, decideApprovalStep, pendingApprovalSteps } from "../domain/workflows.js";
 import {
   BLOCKING_RESERVATION_STATUSES,
   BUSINESS_DAY_END,
@@ -131,7 +131,7 @@ export const reservationMethods = {
         reservation.status = "Completed";
         reservation.completedAt = nowLabel();
         this.addNotification(reservation.requester, `${reservation.resourceName} was completed after its scheduled use.`, "Reservation");
-        this.addActivity("Reservation completed", "System", reservation.resourceName, reservation.id);
+        this.addActivity("Reservation completed", "System", reservation.resourceName, reservation.id, reservation.id);
         changed += 1;
         continue;
       }
@@ -159,7 +159,7 @@ export const reservationMethods = {
         `${reservation.resourceName}: ${reservation.requester}'s request expired before final confirmation.`,
         "Reservation"
       );
-      this.addActivity("Reservation expired", "System", reservation.resourceName, reservation.id);
+      this.addActivity("Reservation expired", "System", reservation.resourceName, reservation.id, reservation.id);
       changed += 1;
     }
     return changed;
@@ -353,7 +353,7 @@ export const reservationMethods = {
     this.data.reservations.unshift(reservation);
     this.addNotification(this.currentUser.name, `${resource.name} request was submitted and routed to ${resource.office}.`, "Reservation");
     this.addNotification(resource.office, `${resource.name}: new reservation request from ${this.currentUser.name} needs review.`, "Reservation");
-    this.addActivity("Reservation submitted", this.currentUser.name, resource.name, `${date} ${start}-${end}`);
+    this.addActivity("Reservation submitted", this.currentUser.name, resource.name, `${date} ${start}-${end}`, reservation.id);
     await this.save(() => awsApi.createReservation(values), previousData);
   },
 
@@ -399,7 +399,7 @@ export const reservationMethods = {
       `${reservation.resourceName}: ${step.name} was approved by ${this.currentUser.name}. Current status: ${reservation.status}${reservation.status === "For Payment" ? " - upload your receipt to continue." : "."}`,
       "Approval"
     );
-    this.addActivity("Approval step approved", this.currentUser.name, `${reservation.resourceName}: ${step.name}`, reservation.id);
+    this.addActivity("Approval step approved", this.currentUser.name, `${reservation.resourceName}: ${step.name}`, reservation.id, reservation.id);
     await this.save(() => awsApi.decideReservation(id, step.id, true), previousData);
   },
 
@@ -418,7 +418,7 @@ export const reservationMethods = {
       `${reservation.resourceName}: ${step.name} was rejected by ${this.currentUser.name}. Reason: ${cleanReason}`,
       "Approval"
     );
-    this.addActivity("Approval step rejected", this.currentUser.name, `${reservation.resourceName}: ${step.name}`, cleanReason);
+    this.addActivity("Approval step rejected", this.currentUser.name, `${reservation.resourceName}: ${step.name}`, cleanReason, reservation.id);
     await this.save(() => awsApi.decideReservation(id, step.id, false, cleanReason), previousData);
   },
 
@@ -439,7 +439,7 @@ export const reservationMethods = {
     );
     releaseOpenPayment(this.data.payments.find((item) => item.id === reservation.paymentId || item.reservationId === reservation.id), "Cancelled", cleanReason);
     this.addNotification(reservation.office, `${reservation.resourceName}: ${reservation.requester} cancelled the reservation. Reason: ${cleanReason}`, "Reservation");
-    this.addActivity("Reservation cancelled", this.currentUser.name, reservation.resourceName, cleanReason);
+    this.addActivity("Reservation cancelled", this.currentUser.name, reservation.resourceName, cleanReason, reservation.id);
     await this.save(() => awsApi.cancelReservation(id, cleanReason), previousData);
   },
 
@@ -469,7 +469,7 @@ export const reservationMethods = {
     releaseOpenPayment(this.data.payments.find((item) => item.id === reservation.paymentId || item.reservationId === reservation.id), "Cancelled", "Reservation was rescheduled and sent back for approval.");
     reservation.paymentId = "";
     this.addNotification(reservation.office, `${reservation.resourceName}: ${reservation.requester} requested a reschedule from ${previousSchedule} to ${date} ${start}-${end}.`, "Reservation");
-    this.addActivity("Reservation rescheduled", this.currentUser.name, reservation.resourceName, `${previousSchedule} -> ${date} ${start}-${end}`);
+    this.addActivity("Reservation rescheduled", this.currentUser.name, reservation.resourceName, `${previousSchedule} -> ${date} ${start}-${end}`, reservation.id);
     await this.save(() => awsApi.rescheduleReservation(id, { date, start, end }), previousData);
   },
 
@@ -508,7 +508,7 @@ export const reservationMethods = {
       throw new Error("Unsupported reservation status update.");
     }
     this.addNotification(reservation.requester, `${reservation.resourceName} status changed to ${status}${cleanReason ? `. Reason: ${cleanReason}` : "."}`, "Reservation");
-    this.addActivity(`Reservation marked ${status}`, this.currentUser.name, reservation.resourceName, cleanReason);
+    this.addActivity(`Reservation marked ${status}`, this.currentUser.name, reservation.resourceName, cleanReason, reservation.id);
     await this.save(() => awsApi.updateReservationStatus(id, status, cleanReason), previousData);
   }
 };

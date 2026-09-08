@@ -4,17 +4,20 @@ import { LoadingScreen } from "./components/Common.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { isViewAllowed, NAV_ITEMS } from "./config.js";
 import { ReservataStore } from "./store.js";
-import { completeSsoLogin, startSsoLogin } from "./ssoAuth.js";
+import { completeSsoLogin, startSsoLogin } from "./services/ssoAuth.js";
 import ViewRouter from "./views/ViewRouter.jsx";
+import { confirmLeaveForms } from "./shared/formSafety.js";
 
 export default function App() {
   const storeRef = useRef(new ReservataStore());
   const initializedRef = useRef(false);
   const toastTimerRef = useRef(null);
+  const operationRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [, setRevision] = useState(0);
   const [toast, setToast] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
+  const [selectedSchedule, setSelectedSchedule] = useState(null);
   const store = storeRef.current;
 
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
@@ -48,6 +51,7 @@ export default function App() {
 
   const navigate = useCallback(
     (view) => {
+      if (view !== store.session.activeView && !confirmLeaveForms()) return;
       if (!isViewAllowed(store.session.activeRole, view)) {
         store.setView(store.currentUser.home);
         refresh();
@@ -55,6 +59,10 @@ export default function App() {
         return;
       }
       store.setView(view);
+      if (view !== "newRequest") {
+        setSelectedResourceId("");
+        setSelectedSchedule(null);
+      }
       refresh();
     },
     [refresh, showToast, store],
@@ -62,14 +70,20 @@ export default function App() {
 
   const perform = useCallback(
     async (operation, successMessage) => {
+      if (operationRef.current) return false;
+      operationRef.current = true;
       try {
         await operation();
+        window.dispatchEvent(new Event("reservata:action-success"));
         refresh();
         if (successMessage) showToast(successMessage);
         return true;
       } catch (error) {
+        window.dispatchEvent(new CustomEvent("reservata:action-error", { detail: error.message || "The action could not be completed." }));
         showToast(error.message || "The action could not be completed.");
         return false;
+      } finally {
+        operationRef.current = false;
       }
     },
     [refresh, showToast],
@@ -77,13 +91,15 @@ export default function App() {
 
   async function login({ email, password }) {
     const signedIn = await perform(() => store.login(email, password));
-    if (signedIn) setSelectedResourceId("");
+    if (signedIn) { setSelectedResourceId(""); setSelectedSchedule(null); }
     return signedIn;
   }
 
   async function logout() {
+    if (!confirmLeaveForms()) return;
     await store.logout();
     setSelectedResourceId("");
+    setSelectedSchedule(null);
     refresh();
   }
 
@@ -95,8 +111,9 @@ export default function App() {
     await perform(() => store.reset(), "Demo data has been reset.");
   }
 
-  function reserve(resourceId) {
+  function reserve(resourceId, schedule = null) {
     setSelectedResourceId(resourceId);
+    setSelectedSchedule(schedule);
     navigate("newRequest");
   }
 
@@ -139,6 +156,7 @@ export default function App() {
           <ViewRouter
             store={store}
             selectedResourceId={selectedResourceId}
+            selectedSchedule={selectedSchedule}
             onAction={perform}
             onNavigate={navigate}
             onReserve={reserve}

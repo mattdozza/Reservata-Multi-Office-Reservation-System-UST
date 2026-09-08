@@ -1,5 +1,9 @@
 # API Reference
 
+Resource photos are optional. The browser converts JPG/PNG/WebP inputs (up to 5 MB) to JPEGs at most 1000 pixels on the longest side and under 400,000 data-URL characters. The resource stores only `photoKey`. Local endpoints are `POST /api/resource-photos` with `{ data }` and `GET /api/resource-photos/{key}`; files live in the git-ignored `data/resource-photos/` directory, which must be backed up with the database. AWS stores photos privately under `resource-photos/` in the existing bucket and returns temporary preview URLs. Removing or replacing a photo detaches its key; it does not delete the old stored object.
+
+AWS receipts use two phases: request `/receipt-upload`, PUT the file to the returned S3 URL, then POST `{ objectKey }` to `/receipt-complete`. Only completion advances the payment. Deploy the updated frontend and SAM template together.
+
 ## AWS API Gateway API
 
 All AWS endpoints require `Authorization: Bearer <University JWT>`. API Gateway validates issuer and audience, then Lambda applies the Reservata role and office stored for the authenticated email.
@@ -8,6 +12,8 @@ All AWS endpoints require `Authorization: Bearer <University JWT>`. API Gateway 
 | --- | --- | --- |
 | GET | `/bootstrap` | Return the authenticated user and role-scoped application state |
 | GET/POST | `/resources` | List or create office resources |
+| POST | `/resource-photos` | Upload a processed JPEG as an Office Admin; returns an office-owned photo key |
+| GET | `/resource-photos/{id}` | Get a temporary preview URL for a visible resource photo |
 | GET | `/resources/{id}/availability` | Check selected-slot availability, daily slots, and alternatives |
 | PATCH | `/resources/{id}` | Edit or archive an Office Admin resource |
 | PATCH | `/resources/{id}/status` | Update an Office Admin resource status |
@@ -16,6 +22,7 @@ All AWS endpoints require `Authorization: Bearer <University JWT>`. API Gateway 
 | POST | `/reservations/{id}/document-upload` | Create a five-minute private S3 upload URL for supporting documents |
 | GET | `/payments` | List scoped payment records |
 | POST | `/payments/{id}/receipt-upload` | Create a five-minute private S3 upload URL |
+| POST | `/payments/{id}/receipt-complete` | Verify the uploaded S3 object and advance the payment to Pending Verification |
 | PATCH | `/payments/{id}/verification` | Verify or reject a receipt |
 | GET/POST | `/visitors` | List or submit visitor requests |
 | PATCH | `/visitors/{id}/decision` | Approve or reject a visitor request |

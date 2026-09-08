@@ -1,5 +1,6 @@
-import { awsApi } from "../awsApi.js";
-import { nextId } from "../utils.js";
+import { awsApi } from "../services/awsApi.js";
+import { nextId } from "../shared/utils.js";
+import { uploadResourcePhoto } from "../services/resourcePhotos.js";
 import { BLOCKING_RESERVATION_STATUSES, generateAssetTag, normalizeAssetTag, normalizeResourceTags, requirePaymentDeadlineHours, validPositiveNumber } from "./shared.js";
 
 export const resourceMethods = {
@@ -39,10 +40,13 @@ export const resourceMethods = {
     }
     const template = this.data.approvalTemplates.find((item) => item.id === values.workflowTemplateId && item.status === "Active");
     if (!template) throw new Error("Select an active approval workflow.");
+    let photoKey = values.photoKey ?? existing?.photoKey ?? "";
+    if (values.photoData) photoKey = (await uploadResourcePhoto(values.photoData)).key;
     const resource = {
       ...(existing || {}),
       id: existing?.id || nextId("R", this.data.resources),
       assetTag,
+      photoKey,
       name: String(values.name).trim(),
       type,
       office: this.officeScope,

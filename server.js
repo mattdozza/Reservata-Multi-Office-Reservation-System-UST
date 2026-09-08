@@ -6,9 +6,10 @@ const path = require("path");
 const PORT = Number(process.env.PORT || 5178);
 const HOST = process.env.HOST || "127.0.0.1";
 const ROOT = __dirname;
-const DB_PATH = path.join(ROOT, "data", "db.json");
+const DB_PATH = process.env.RESERVATA_DB_PATH || path.join(ROOT, "data", "db.json");
 const ACCOUNTS_PATH = path.join(ROOT, "data", "accounts.json");
 const DIST_PATH = path.join(ROOT, "dist");
+const RESOURCE_PHOTOS_PATH = path.join(ROOT, "data", "resource-photos");
 const STATIC_ROOT = fs.existsSync(DIST_PATH) ? DIST_PATH : ROOT;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const sessions = new Map();
@@ -758,6 +759,7 @@ function scopePredicates(database, user) {
     systemSettings: () => true,
     notifications: notificationVisible,
     activity: (item) => {
+      if (item.reservationId) return reservationIds.has(item.reservationId);
       if (["Requester", "OSG Requester"].includes(user.role)) return item.actor === user.name;
       if (user.role === "Office Admin") return item.actor === user.name || officeTargets.has(item.target);
       if (user.role === "OSG Admin") return item.actor === user.name || visitorTargets.has(item.target);
@@ -823,6 +825,27 @@ async function handleApi(request, response, url) {
   if (await handleAuth(request, response, pathname)) return;
 
   const user = authenticatedUser(request);
+  if (pathname === "/api/resource-photos" && request.method === "POST") {
+    if (user.role !== "Office Admin") throw new HttpError(403, "Only office admins can upload resource photos.");
+    const { data } = await readBody(request);
+    if (typeof data !== "string" || data.length > 400_000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new HttpError(400, "Choose a valid resource photo smaller than 300 KB after processing.");
+    const bytes = Buffer.from(data.split(",")[1], "base64");
+    if (bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255) throw new HttpError(400, "Invalid JPEG photo.");
+    const prefix = crypto.createHash("sha256").update(user.office).digest("hex").slice(0, 16);
+    const key = `${prefix}-${crypto.randomUUID()}.jpg`;
+    fs.mkdirSync(RESOURCE_PHOTOS_PATH, { recursive: true });
+    fs.writeFileSync(path.join(RESOURCE_PHOTOS_PATH, key), bytes, { flag: "wx" });
+    sendJson(response, 201, { key });
+    return;
+  }
+  const photoMatch = pathname.match(/^\/api\/resource-photos\/([a-f0-9]{16}-[a-f0-9-]{36}\.jpg)$/);
+  if (photoMatch && request.method === "GET") {
+    const resource = scopedState(readDatabase(), user).resources.find((item) => item.photoKey === photoMatch[1]);
+    const file = path.join(RESOURCE_PHOTOS_PATH, photoMatch[1]);
+    if (!resource || !fs.existsSync(file)) throw new HttpError(404, "Resource photo not found.");
+    sendJson(response, 200, { url: `data:image/jpeg;base64,${fs.readFileSync(file).toString("base64")}` });
+    return;
+  }
   if (pathname === "/api/state" && request.method === "GET") {
     sendJson(response, 200, scopedState(readLifecycleDatabase(), user));
     return;
@@ -854,6 +877,12 @@ async function handleApi(request, response, url) {
     const before = scopedState(database, user);
     const after = sanitizeState(await readBody(request));
     assertScopedMutation(before, after, user, database);
+    for (const resource of after.resources) {
+      const previous = database.resources.find((item) => item.id === resource.id);
+      if (!resource.photoKey || resource.photoKey === previous?.photoKey) continue;
+      const prefix = crypto.createHash("sha256").update(user.office).digest("hex").slice(0, 16);
+      if (user.role !== "Office Admin" || !new RegExp(`^${prefix}-[a-f0-9-]{36}\\.jpg$`).test(resource.photoKey) || !fs.existsSync(path.join(RESOURCE_PHOTOS_PATH, resource.photoKey))) throw new HttpError(400, "Upload a photo belonging to your office first.");
+    }
     const merged = normalizeState(mergeScopedState(database, after, user));
     expireOverdueReservations(merged);
     writeDatabase(merged);

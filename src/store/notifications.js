@@ -1,5 +1,5 @@
-import { markLocalNotificationsRead, saveDatabase } from "../api.js";
-import { awsApi } from "../awsApi.js";
+import { markLocalNotificationsRead, saveDatabase } from "../services/api.js";
+import { awsApi } from "../services/awsApi.js";
 
 export const notificationMethods = {
   get visibleNotifications() {

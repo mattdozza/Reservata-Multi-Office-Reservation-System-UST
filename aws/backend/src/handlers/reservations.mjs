@@ -269,7 +269,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       const uploadUrl = await signer(s3, command, { expiresIn: 300 });
       const supportingDocuments = [document, ...(reservation.supportingDocuments || [])];
       const notification = notificationRecord(user.email, user.name, `${reservation.resourceName} supporting document was uploaded.`);
-      const activity = activityRecord(user, "Supporting document uploaded", reservation.resourceName, reservation.office);
+      const activity = activityRecord(user, "Supporting document uploaded", reservation.resourceName, reservation.office, reservation.id, document.name);
       await repo.transact([
         { Update: {
           TableName: TABLES.reservations,
@@ -337,7 +337,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         approvalSteps: buildApprovalSteps(workflow, resource, requirements, id)
       };
       const notification = notificationRecord(user.email, user.name, `${resource.name} request was submitted for ${resource.office} review.`);
-      const activity = activityRecord(user, "Reservation submitted", resource.name, resource.office);
+      const activity = activityRecord(user, "Reservation submitted", resource.name, resource.office, reservation.id);
       await repo.transact([
         { Put: { TableName: TABLES.reservations, Item: reservation, ConditionExpression: "attribute_not_exists(id)" } },
         { Put: { TableName: TABLES.notifications, Item: notification } },
@@ -376,7 +376,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
             ExpressionAttributeValues: { ":cancelled": "Cancelled", ":updatedAt": updatedAt, ":actor": user.name, ":reason": reason, ":steps": skippedPendingSteps(reservation.approvalSteps), ":previous": reservation.status }
           } },
           { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.office, reservation.office, `${reservation.resourceName}: ${reservation.requester} cancelled the reservation. Reason: ${reason}`) } },
-          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation cancelled", reservation.resourceName, reservation.office) } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation cancelled", reservation.resourceName, reservation.office, reservation.id, body.reason) } },
           ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
             Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
           }))
@@ -430,7 +430,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
             }
           } },
           { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.office, reservation.office, `${reservation.resourceName}: ${reservation.requester} requested a reschedule to ${body.date} ${body.start}-${body.end}.`) } },
-          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation rescheduled", reservation.resourceName, reservation.office) } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation rescheduled", reservation.resourceName, reservation.office, reservation.id, `${reservation.date} ${reservation.start}-${reservation.end} -> ${body.date} ${body.start}-${body.end}`) } },
           ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
             Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
           })),
@@ -485,7 +485,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
             ExpressionAttributeValues: values
           } },
           { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.requesterEmail, reservation.requester, `${reservation.resourceName} status changed to ${nextStatus}${reason ? `. Reason: ${reason}` : "."}`) } },
-          { Put: { TableName: TABLES.activity, Item: activityRecord(user, `Reservation marked ${nextStatus}`, reservation.resourceName, reservation.office) } }
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, `Reservation marked ${nextStatus}`, reservation.resourceName, reservation.office, reservation.id, body.reason) } }
         ];
         if (["Completed", "No Show", "Cancelled", "Expired"].includes(nextStatus)) {
           transaction.push(...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
@@ -513,7 +513,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       const decision = decideApprovalStep(reservation, body.stepId, body.approved, user.name, updatedAt);
       const status = decision.status;
       const nextVersion = Number(reservation.workflowVersion || 1) + 1;
-      const activity = activityRecord(user, body.approved ? "Approval step approved" : "Approval step rejected", `${reservation.resourceName}: ${pendingStep.name}`);
+      const activity = activityRecord(user, body.approved ? "Approval step approved" : "Approval step rejected", `${reservation.resourceName}: ${pendingStep.name}`, reservation.office, reservation.id, body.reason);
       const notification = notificationRecord(
         reservation.requesterEmail,
         reservation.requester,

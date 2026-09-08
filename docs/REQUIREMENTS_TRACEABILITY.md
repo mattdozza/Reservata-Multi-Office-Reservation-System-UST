@@ -11,7 +11,7 @@
 | RES-BOOK-04 Upload Supporting Documents / Payment Receipt | Upload Document and Upload Receipt actions in My Requests, local document/receipt validation and preview, AWS private S3 presigned document/receipt uploads, and payment verification queue |
 | Reservation submission | New Reservation Request form |
 | Double-booking prevention | `hasConflict()` and slot alternatives in `src/store.js`, full-database local API conflict checks, AWS resource-date conflict checks, and DynamoDB reservation-lock writes on submission |
-| Multi-tier approval workflow | `src/workflows.js`, per-request approval-step snapshots, and office-specific queues |
+| Multi-tier approval workflow | `src/domain/workflows.js`, per-request approval-step snapshots, and office-specific queues |
 | Payment receipt upload | Upload Receipt simulation in My Requests |
 | Payment verification | Payment Verification screen |
 | Notifications | Alerts screen and notification count |

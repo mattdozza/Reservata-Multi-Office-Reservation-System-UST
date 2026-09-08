@@ -1,6 +1,6 @@
-import { STORAGE_KEYS } from "./config.js";
-import { DEFAULT_DATA } from "./defaultData.js";
-import { clone } from "./utils.js";
+import { STORAGE_KEYS } from "../config.js";
+import { DEFAULT_DATA } from "../data/defaultData.js";
+import { clone } from "../shared/utils.js";
 
 const LOCAL_TOKEN_KEY = "reservata.localAccessToken.v1";
 
@@ -71,6 +71,14 @@ export async function loadResourceAvailability(resourceId, date, start, end) {
   const params = new URLSearchParams({ date, start, end });
   const response = await authenticatedFetch(`/api/resources/${encodeURIComponent(resourceId)}/availability?${params}`);
   return parseResponse(response);
+}
+
+export async function uploadLocalResourcePhoto(data) {
+  return parseResponse(await authenticatedFetch("/api/resource-photos", { method: "POST", body: JSON.stringify({ data }) }));
+}
+
+export async function loadLocalResourcePhoto(key) {
+  return parseResponse(await authenticatedFetch(`/api/resource-photos/${encodeURIComponent(key)}`));
 }
 
 export async function saveDatabase(data, apiAvailable) {

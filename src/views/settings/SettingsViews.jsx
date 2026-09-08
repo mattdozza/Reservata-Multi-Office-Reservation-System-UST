@@ -1,9 +1,11 @@
+import ManagedForm from "../../components/ManagedForm.jsx";
+import { confirmLeaveForms } from "../../shared/formSafety.js";
 import { useEffect, useMemo, useState } from "react";
 import { Archive, Clock3, Edit3, Plus, Save, Trash2 } from "lucide-react";
-import { Badge, CardHeader } from "../components/Common.jsx";
-import { MAX_PAYMENT_DEADLINE_HOURS, MIN_PAYMENT_DEADLINE_HOURS } from "../store/shared.js";
-import { WORKFLOW_CONDITIONS } from "../workflows.js";
-export { OfficeSettingsView } from "./settings/OfficeSettingsView.jsx";
+import { Badge, CardHeader } from "../../components/Common.jsx";
+import { MAX_PAYMENT_DEADLINE_HOURS, MIN_PAYMENT_DEADLINE_HOURS } from "../../store/shared.js";
+import { WORKFLOW_CONDITIONS } from "../../domain/workflows.js";
+export { OfficeSettingsView } from "./OfficeSettingsView.jsx";
 
 const RESOURCE_TYPES = ["Facility", "Vehicle", "Equipment"];
 
@@ -195,11 +197,12 @@ export function WorkflowsView({ store, onAction }) {
             aria-selected={activeTab === id}
             aria-controls={`settings-panel-${id}`}
             tabIndex={activeTab === id ? 0 : -1}
-            onClick={() => setActiveTab(id)}
+            onClick={() => { if (id === activeTab || confirmLeaveForms()) setActiveTab(id); }}
             onKeyDown={(event) => {
               const offsets = { ArrowRight: 1, ArrowLeft: -1, Home: -index, End: tabs.length - 1 - index };
               if (!(event.key in offsets)) return;
               event.preventDefault();
+              if (!confirmLeaveForms()) return;
               const next = tabs[(index + offsets[event.key] + tabs.length) % tabs.length][0];
               setActiveTab(next);
               document.getElementById(`settings-tab-${next}`)?.focus();
@@ -209,7 +212,7 @@ export function WorkflowsView({ store, onAction }) {
           </button>
         ))}
       </div>
-      <form className="workflow-panel workflow-payment" id="settings-panel-payment" role="tabpanel" aria-labelledby="settings-tab-payment" hidden={activeTab !== "payment"} onSubmit={submitPaymentSettings}>
+      <ManagedForm className="workflow-panel workflow-payment" id="settings-panel-payment" role="tabpanel" aria-labelledby="settings-tab-payment" hidden={activeTab !== "payment"} onSubmit={submitPaymentSettings}>
         <CardHeader
           title="Payment expiration"
           subtitle="Default receipt-upload window for paid reservations."
@@ -235,9 +238,9 @@ export function WorkflowsView({ store, onAction }) {
             <Clock3 size={16} /> Save Payment Window
           </button>
         </div>
-      </form>
+      </ManagedForm>
       <div id="settings-panel-workflows" role="tabpanel" aria-labelledby="settings-tab-workflows" hidden={activeTab !== "workflows"}>
-        <form className="workflow-panel workflow-form" onSubmit={submit}>
+        <ManagedForm className="workflow-panel workflow-form" onSubmit={submit}>
           <CardHeader
             title={selectedId ? "Edit workflow" : "Create workflow"}
             subtitle="Sequence 1 runs first; equal later sequence numbers run in parallel."
@@ -411,7 +414,7 @@ export function WorkflowsView({ store, onAction }) {
               </button>
             )}
           </div>
-        </form>
+        </ManagedForm>
 
         <section className="workflow-panel workflow-catalog">
           <CardHeader
@@ -467,7 +470,7 @@ export function WorkflowsView({ store, onAction }) {
           subtitle="These options appear on the requester reservation form and can trigger workflow steps."
         />
         <div className="workflow-requirements-layout">
-          <form className="form-grid" onSubmit={submitRequirement}>
+          <ManagedForm className="form-grid" onSubmit={submitRequirement}>
             <div className="field">
               <label htmlFor="requirement-key">Requirement key</label>
               <input
@@ -556,7 +559,7 @@ export function WorkflowsView({ store, onAction }) {
                 </button>
               )}
             </div>
-          </form>
+          </ManagedForm>
           <div className="requirement-list">
             {store.allRequirementOptions.map((option) => (
               <div className="list-item" key={option.id}>
