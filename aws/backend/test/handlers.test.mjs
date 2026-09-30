@@ -59,6 +59,12 @@ function event(method, email, body, pathParameters = {}, rawPath = "/", queryStr
   };
 }
 
+function futureDate(days = 7) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 test("Office Admin resource listing is constrained to the assigned office", async () => {
   const calls = [];
   const repo = {
@@ -116,6 +122,7 @@ test("Office Admin can create resources with generated unique asset tags", async
 });
 
 test("Requester submission creates reservation, notification, and activity atomically", async () => {
+  const date = futureDate();
   let transaction;
   const repo = {
     async get(table) {
@@ -128,7 +135,7 @@ test("Requester submission creates reservation, notification, and activity atomi
     async transact(items) { transaction = items; }
   };
   const response = await createReservationHandler(repo)(event("POST", "requester@ust.edu.ph", {
-    resourceId: "R-1", date: "2026-09-10", start: "09:00", end: "10:00", purpose: "Capstone test"
+    resourceId: "R-1", date, start: "09:00", end: "10:00", purpose: "Capstone test"
   }, {}, "/reservations"));
   assert.equal(response.statusCode, 201);
   assert.equal(transaction.length, 7);
@@ -139,14 +146,15 @@ test("Requester submission creates reservation, notification, and activity atomi
   assert.equal(transaction[1].Put.TableName, "Notifications");
   assert.equal(transaction[2].Put.TableName, "Activity");
   assert.deepEqual(transaction.slice(3).map((item) => item.Put.Item.slotKey), [
-    "R-1#2026-09-10#09:00",
-    "R-1#2026-09-10#09:15",
-    "R-1#2026-09-10#09:30",
-    "R-1#2026-09-10#09:45"
+    `R-1#${date}#09:00`,
+    `R-1#${date}#09:15`,
+    `R-1#${date}#09:30`,
+    `R-1#${date}#09:45`
   ]);
 });
 
 test("Requester submission rejects an overlapping pending reservation", async () => {
+  const date = futureDate();
   const repo = {
     async get(table) {
       if (table === "Users") return { email: "requester@ust.edu.ph", name: "Requester", office: "CICS", role: "Requester", status: "Active" };
@@ -155,7 +163,7 @@ test("Requester submission rejects an overlapping pending reservation", async ()
     },
     async query(table) {
       if (table === "Reservations") {
-        return [{ id: "REQ-1", resourceId: "R-1", resourceDate: "R-1#2026-09-10", date: "2026-09-10", start: "09:30", end: "10:30", status: "Under Owner Review" }];
+        return [{ id: "REQ-1", resourceId: "R-1", resourceDate: `R-1#${date}`, date, start: "09:30", end: "10:30", status: "Under Owner Review" }];
       }
       return [];
     },
@@ -164,12 +172,13 @@ test("Requester submission rejects an overlapping pending reservation", async ()
     }
   };
   const response = await createReservationHandler(repo)(event("POST", "requester@ust.edu.ph", {
-    resourceId: "R-1", date: "2026-09-10", start: "09:00", end: "10:00", purpose: "Capstone test"
+    resourceId: "R-1", date, start: "09:00", end: "10:00", purpose: "Capstone test"
   }, {}, "/reservations"));
   assert.equal(response.statusCode, 409);
 });
 
 test("Resource availability reports blocked slots and alternatives without listing private reservations", async () => {
+  const date = futureDate();
   const repo = {
     async get(table) {
       if (table === "Users") return { email: "requester@ust.edu.ph", name: "Requester", office: "CICS", role: "Requester", status: "Active" };
@@ -180,14 +189,14 @@ test("Resource availability reports blocked slots and alternatives without listi
       assert.equal(table, "Reservations");
       assert.equal(index, "resource-date-index");
       assert.equal(key, "resourceDate");
-      if (value === "R-1#2026-09-10") {
-        return [{ id: "REQ-1", resourceId: "R-1", date: "2026-09-10", start: "09:00", end: "10:00", status: "Under Owner Review", requester: "Other Requester" }];
+      if (value === `R-1#${date}`) {
+        return [{ id: "REQ-1", resourceId: "R-1", date, start: "09:00", end: "10:00", status: "Under Owner Review", requester: "Other Requester" }];
       }
       return [];
     }
   };
   const response = await createReservationHandler(repo)(event("GET", "requester@ust.edu.ph", undefined, { id: "R-1" }, "/resources/R-1/availability", {
-    date: "2026-09-10",
+    date,
     start: "09:00",
     end: "10:00"
   }));

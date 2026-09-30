@@ -2,7 +2,7 @@
 
 | Capstone Requirement | Prototype Location |
 | --- | --- |
-| SSO and RBAC | Account login in `LoginScreen.jsx`, local authenticated sessions in `server.js`, guarded navigation in `App.jsx`, and production JWT/role checks in the Lambda backend |
+| SSO and RBAC | Mock UST SSO Authorization Code + PKCE flow in `server.js` and `src/services/ssoAuth.js`, email-based RESERVATA role lookup, guarded navigation in `App.jsx`, and production JWT/role checks in the Lambda backend |
 | Requester dashboard | Requester role dashboard |
 | Resource browsing | Resources view |
 | RES-BOOK-01 View Resource Availability | New Reservation Request live availability panel, daily slot grid, suggested alternatives, local `/api/resources/{id}/availability`, and AWS `/resources/{id}/availability` |

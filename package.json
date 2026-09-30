@@ -8,6 +8,7 @@
     "dev": "vite --host 127.0.0.1 --port 5178",
     "api": "node server.js",
     "build": "vite build",
+    "serve:production": "npm run build && node server.js",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test": "npm run local:test",
     "check": "npm run build && node --check server.js && node --check dev-server.js && npm run local:test && npm run aws:check && npm run aws:test",

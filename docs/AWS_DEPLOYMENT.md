@@ -101,6 +101,8 @@ The `dist/` directory is ready for the frontend S3 bucket and CloudFront distrib
 
 ## Authentication Flow
 
+Local development runs this same browser flow against `/mock-sso/authorize` and `/mock-sso/token`. Setting the production API and SSO environment variables replaces those mock endpoints with the registered University provider; no mock credentials or mock authorization codes are deployed to AWS.
+
 1. The React app creates an OAuth state value and PKCE verifier.
 2. The browser redirects to University SSO.
 3. The university redirects back with an authorization code.

@@ -5,12 +5,12 @@ RESERVATA is a multi-office resource reservation and management application for 
 ## Technology Stack
 
 - Frontend: React with JavaScript and Vite
-- Local development backend: Node.js API and JSON data file
+- Local development backend: Node.js API, mock UST SSO provider, and JSON data file
 - AWS backend: API Gateway, modular JavaScript Lambda functions, DynamoDB, and private S3 receipt storage
 - Production authentication: configurable University OIDC SSO with RESERVATA-managed RBAC
 - Frontend deployment target: Amazon S3 and CloudFront
 
-Local defense mode remains available without AWS credentials. The deployed mode is enabled through production environment variables and uses the serverless resources in `aws/template.yaml`.
+Local defense mode uses an OAuth 2.0-style mock UST SSO Authorization Code flow with PKCE. The deployed mode is enabled through production environment variables and replaces the mock provider with the university OIDC endpoints.
 
 ## Run in VS Code
 
@@ -29,11 +29,11 @@ npm start
 
 Open `http://127.0.0.1:5178/`.
 
-`npm start` launches both the Vite React frontend and the authenticated local development API. A new browser session opens at the login screen; refreshing an authenticated tab keeps that account signed in until logout.
+`npm start` launches Vite, the local API, and the mock UST identity provider. Select **Sign in with Mock UST SSO**, authenticate on the separate provider page, and return to RESERVATA automatically. Refreshing an authenticated tab keeps that account signed in until logout.
 
 ## Defense Accounts
 
-These credentials exist only in the local defense environment. Passwords are stored as salted hashes in `data/accounts.json`; deployed AWS mode uses University SSO instead.
+These credentials exist only in the local mock identity provider. Before submission, the provider encrypts the password with an ephemeral RSA-OAEP public key, so the request payload contains `encrypted_password` ciphertext rather than a plaintext `password` field. The server decrypts it only for verification against the salted hashes in `data/accounts.json`; RESERVATA receives only the authenticated email and obtains its role and office from its own user record. Deployed AWS mode uses University SSO instead.
 
 | Role | Email | Local password |
 | --- | --- | --- |

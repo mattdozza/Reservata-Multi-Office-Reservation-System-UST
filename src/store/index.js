@@ -2,7 +2,6 @@ import { ROLE_IDS, USERS } from "../config.js";
 import {
   loadDatabase,
   loadSession,
-  loginLocalAccount,
   logoutLocalAccount,
   resetDatabase,
   restoreLocalAccount,
@@ -70,15 +69,6 @@ export class ReservataStore {
     this.session.activeRole = role;
     this.session.activeView = USERS[role].home;
     saveSession(this.session);
-  }
-
-  async login(email, password) {
-    if (this.backendMode === "aws") throw new Error("Use University SSO to sign in.");
-    this.localUser = await loginLocalAccount(email, password);
-    this.applyAuthenticatedUser(this.localUser);
-    const result = await loadDatabase();
-    this.setData(result.data);
-    this.apiAvailable = result.apiAvailable;
   }
 
   setData(data) {

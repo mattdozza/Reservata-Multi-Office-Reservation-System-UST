@@ -340,7 +340,7 @@
       "setupRequired": false,
       "externalVisitors": false,
       "parkingRequired": true,
-      "status": "Confirmed",
+      "status": "Completed",
       "submittedAt": "Sep 7, 2026, 7:03 PM",
       "requiresPayment": true,
       "workflowTemplateId": "WF-VENUE",
@@ -383,7 +383,8 @@
         }
       ],
       "rejectionReason": "",
-      "upcomingReminderSentAt": "2026-09-07T11:28:38.803Z"
+      "upcomingReminderSentAt": "2026-09-07T11:28:38.803Z",
+      "completedAt": "2026-09-08T04:59:54.573Z"
     },
     {
       "id": "REQ-2026-178EBE2D",
@@ -699,6 +700,14 @@
   ],
   "notifications": [
     {
+      "id": "N-852197aa-24c2-43b3-912d-7516b2021d09",
+      "user": "Student Body Requester",
+      "message": "Multipurpose Hall was completed after its scheduled use.",
+      "type": "Reservation",
+      "unread": false,
+      "time": "2026-09-08T04:59:54.575Z"
+    },
+    {
       "id": "N-01cea7aa-3365-4f38-b850-0c6718adf5f6",
       "user": "Student Body Requester",
       "message": "Multipurpose Hall is scheduled within the next 24 hours.",
@@ -912,6 +921,14 @@
     }
   ],
   "activity": [
+    {
+      "id": "ACT-3c590956-4d15-4490-8da5-ecba7731cb2f",
+      "action": "Reservation completed",
+      "actor": "System",
+      "target": "Multipurpose Hall",
+      "details": "REQ-2026-9D5F2E51",
+      "time": "2026-09-08T04:59:54.573Z"
+    },
     {
       "id": "ACT-5daf3d89-8abb-43a7-9942-d02ff9aba75c",
       "action": "Reservation completed",

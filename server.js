@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const zlib = require("zlib");
 
 const PORT = Number(process.env.PORT || 5178);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -13,6 +14,19 @@ const RESOURCE_PHOTOS_PATH = path.join(ROOT, "data", "resource-photos");
 const STATIC_ROOT = fs.existsSync(DIST_PATH) ? DIST_PATH : ROOT;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const sessions = new Map();
+const mockAuthorizationCodes = new Map();
+const MOCK_SSO_CLIENT_ID = "reservata-local";
+const MOCK_SSO_CODE_TTL_MS = 2 * 60 * 1000;
+const {
+  publicKey: MOCK_SSO_PUBLIC_KEY,
+  privateKey: MOCK_SSO_PRIVATE_KEY
+} = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+const MOCK_SSO_PUBLIC_JWK = {
+  ...MOCK_SSO_PUBLIC_KEY.export({ format: "jwk" }),
+  alg: "RSA-OAEP-256",
+  ext: true,
+  key_ops: ["encrypt"]
+};
 const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment", "In Use"];
 const RESOLVED_RESERVATION_STATUSES = ["Rejected", "Cancelled", "Completed", "Expired", "No Show"];
 const ACTIVE_PAYMENT_STATUSES = ["Awaiting Receipt", "Pending Verification"];
@@ -29,8 +43,15 @@ const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8"
+  ".md": "text/markdown; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp"
 };
+
+const COMPRESSIBLE_STATIC_TYPES = new Set([".html", ".css", ".js", ".json", ".md", ".svg"]);
 
 const ROLE_MUTATIONS = {
   Requester: ["reservations", "payments", "notifications", "activity"],
@@ -64,6 +85,32 @@ function sendText(response, status, text) {
   response.end(text);
 }
 
+function sendHtml(response, status, html) {
+  response.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY"
+  });
+  response.end(html);
+}
+
+function sendJavaScript(response, source) {
+  response.writeHead(200, {
+    "Content-Type": "application/javascript; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff"
+  });
+  response.end(source);
+}
+
+function redirect(response, location) {
+  response.writeHead(302, { Location: location, "Cache-Control": "no-store" });
+  response.end();
+}
+
 function readDatabase() {
   return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
 }
@@ -94,6 +141,21 @@ function readBody(request) {
         reject(new HttpError(400, "Request body must be valid JSON."));
       }
     });
+    request.on("error", reject);
+  });
+}
+
+function readFormBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 20_000) {
+        reject(new HttpError(413, "Request body too large."));
+        request.destroy();
+      }
+    });
+    request.on("end", () => resolve(Object.fromEntries(new URLSearchParams(body))));
     request.on("error", reject);
   });
 }
@@ -522,6 +584,245 @@ function authenticatedUser(request) {
   return publicUser(person);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function mockSsoParameters(source, request) {
+  const parameters = {
+    responseType: source.response_type,
+    clientId: source.client_id,
+    redirectUri: source.redirect_uri,
+    scope: source.scope || "openid profile email",
+    state: source.state,
+    codeChallenge: source.code_challenge,
+    codeChallengeMethod: source.code_challenge_method
+  };
+  let redirectUrl;
+  try { redirectUrl = new URL(parameters.redirectUri); }
+  catch { throw new HttpError(400, "The mock SSO redirect URI is invalid."); }
+  const requestOrigin = new URL(`http://${request.headers.host}`).origin;
+  const configuredAppOrigin = new URL(process.env.RESERVATA_APP_ORIGIN || "http://127.0.0.1:5178").origin;
+  const allowedOrigins = new Set([
+    requestOrigin,
+    configuredAppOrigin,
+    "http://127.0.0.1:5178",
+    "http://localhost:5178"
+  ]);
+  if (!allowedOrigins.has(redirectUrl.origin) || !["127.0.0.1", "localhost"].includes(redirectUrl.hostname)) {
+    throw new HttpError(400, "The mock SSO redirect URI must use this local application origin.");
+  }
+  if (parameters.responseType !== "code" || parameters.clientId !== MOCK_SSO_CLIENT_ID) {
+    throw new HttpError(400, "The mock SSO client request is invalid.");
+  }
+  if (!parameters.state || !parameters.codeChallenge || parameters.codeChallengeMethod !== "S256") {
+    throw new HttpError(400, "Mock SSO requires state and PKCE S256 protection.");
+  }
+  return parameters;
+}
+
+function mockSsoRedirect(parameters, values) {
+  const destination = new URL(parameters.redirectUri);
+  for (const [key, value] of Object.entries(values)) destination.searchParams.set(key, value);
+  destination.searchParams.set("state", parameters.state);
+  return destination.toString();
+}
+
+const MOCK_SSO_ENCRYPTION_SCRIPT = `(() => {
+  const form = document.querySelector("form[data-encrypted-login]");
+  const password = document.getElementById("mock-sso-password");
+  const encryptedPassword = document.getElementById("mock-sso-encrypted-password");
+  const encryptionError = document.getElementById("mock-sso-encryption-error");
+  let encryptedSubmission = false;
+
+  function base64(bytes) {
+    let binary = "";
+    for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  }
+
+  form.addEventListener("submit", async (event) => {
+    if (encryptedSubmission || event.submitter?.value === "cancel") return;
+    event.preventDefault();
+    encryptionError.hidden = true;
+    try {
+      const response = await fetch("/mock-sso/public-key", { cache: "no-store" });
+      if (!response.ok) throw new Error("Public key unavailable");
+      const publicKey = await crypto.subtle.importKey(
+        "jwk",
+        await response.json(),
+        { name: "RSA-OAEP", hash: "SHA-256" },
+        false,
+        ["encrypt"]
+      );
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: "RSA-OAEP" },
+        publicKey,
+        new TextEncoder().encode(password.value)
+      );
+      encryptedPassword.value = base64(ciphertext);
+      password.value = "";
+      encryptedSubmission = true;
+      form.requestSubmit(event.submitter);
+    } catch {
+      encryptionError.hidden = false;
+    }
+  });
+})();`;
+
+function decryptMockSsoPassword(ciphertext) {
+  if (typeof ciphertext !== "string" || ciphertext.length > 512 || !/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext)) {
+    throw new Error("Invalid encrypted password");
+  }
+  return crypto.privateDecrypt({
+    key: MOCK_SSO_PRIVATE_KEY,
+    padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: "sha256"
+  }, Buffer.from(ciphertext, "base64")).toString("utf8");
+}
+
+function mockSsoPage(parameters, { error = "", selectedEmail = "" } = {}) {
+  const hidden = [
+    ["response_type", parameters.responseType],
+    ["client_id", parameters.clientId],
+    ["redirect_uri", parameters.redirectUri],
+    ["scope", parameters.scope],
+    ["state", parameters.state],
+    ["code_challenge", parameters.codeChallenge],
+    ["code_challenge_method", parameters.codeChallengeMethod]
+  ].map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`).join("");
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mock UST SSO</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; color: #17191f; background: #f3f3f1; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    main { width: min(100%, 460px); background: white; border: 1px solid #d9d9d5; border-radius: 8px; box-shadow: 0 18px 50px rgba(20,20,20,.12); overflow: hidden; }
+    header { display: flex; align-items: center; gap: 14px; padding: 22px 26px; color: white; background: #080a0f; border-bottom: 5px solid #ffbd1a; }
+    header img { width: 48px; height: 48px; padding: 4px; object-fit: contain; border-radius: 7px; background: white; }
+    header strong, header span { display: block; }
+    header strong { font-size: 19px; }
+    header span { margin-top: 3px; color: #ccd1da; font-size: 12px; }
+    form { display: grid; gap: 17px; padding: 28px 26px; }
+    h1 { margin: 0; font-size: 25px; }
+    .intro { margin: -8px 0 2px; color: #626875; font-size: 14px; line-height: 1.5; }
+    label { display: grid; gap: 7px; font-size: 13px; font-weight: 700; }
+    input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid #c8cbd1; border-radius: 6px; background: white; color: #17191f; font: inherit; }
+    input:focus { outline: 3px solid rgba(27,126,159,.18); border-color: #1b7e9f; }
+    .error { margin: 0; padding: 11px 12px; color: #8d2020; background: #fff0f0; border-left: 3px solid #b52e2e; font-size: 13px; }
+    .error[hidden] { display: none; }
+    .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 3px; }
+    button { min-height: 44px; padding: 0 17px; border-radius: 6px; border: 1px solid #c8cbd1; font: inherit; font-weight: 700; cursor: pointer; }
+    .cancel { background: white; color: #252932; }
+    .continue { border-color: #d99f00; background: #ffbd1a; color: #111318; }
+  </style>
+</head>
+<body>
+  <main>
+    <header><img src="/images/logo2.svg" alt="UST seal"><div><strong>University of Santo Tomas</strong><span>Mock Identity Provider</span></div></header>
+    <form method="post" action="/mock-sso/authorize" data-encrypted-login>
+      <h1>Sign in to RESERVATA</h1>
+      <p class="intro">Use your university account to continue.</p>
+      ${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ""}
+      ${hidden}
+      <input id="mock-sso-encrypted-password" name="encrypted_password" type="hidden">
+      <label>University email<input name="email" type="email" value="${escapeHtml(selectedEmail)}" placeholder="name@ust.edu.ph" autocomplete="username" required autofocus></label>
+      <label>Password<input id="mock-sso-password" type="password" autocomplete="current-password" maxlength="128" required></label>
+      <p class="error" id="mock-sso-encryption-error" role="alert" hidden>Secure password submission could not be prepared. Please try again.</p>
+      <div class="actions">
+        <button class="cancel" name="action" value="cancel" formnovalidate>Cancel</button>
+        <button class="continue" name="action" value="continue">Continue</button>
+      </div>
+    </form>
+    <script src="/mock-sso/encrypt.js" defer></script>
+  </main>
+</body>
+</html>`;
+}
+
+function cleanMockAuthorizationCodes() {
+  for (const [code, record] of mockAuthorizationCodes) {
+    if (record.expiresAt <= Date.now()) mockAuthorizationCodes.delete(code);
+  }
+}
+
+async function handleMockSso(request, response, url) {
+  cleanMockAuthorizationCodes();
+  if (url.pathname === "/mock-sso/public-key" && request.method === "GET") {
+    sendJson(response, 200, MOCK_SSO_PUBLIC_JWK);
+    return;
+  }
+  if (url.pathname === "/mock-sso/encrypt.js" && request.method === "GET") {
+    sendJavaScript(response, MOCK_SSO_ENCRYPTION_SCRIPT);
+    return;
+  }
+  if (url.pathname === "/mock-sso/authorize" && request.method === "GET") {
+    const parameters = mockSsoParameters(Object.fromEntries(url.searchParams), request);
+    sendHtml(response, 200, mockSsoPage(parameters));
+    return;
+  }
+  if (url.pathname === "/mock-sso/authorize" && request.method === "POST") {
+    const body = await readFormBody(request);
+    const parameters = mockSsoParameters(body, request);
+    if (body.action === "cancel") {
+      redirect(response, mockSsoRedirect(parameters, { error: "access_denied", error_description: "Mock UST SSO sign-in was cancelled." }));
+      return;
+    }
+    const email = normalizeEmail(body.email);
+    let password = "";
+    try { password = decryptMockSsoPassword(body.encrypted_password); }
+    catch { password = ""; }
+    const credential = readAccounts().find((item) => normalizeEmail(item.email) === email);
+    const person = readDatabase().people.find((item) => normalizeEmail(item.email) === email);
+    if (!person || person.status !== "Active" || !verifyPassword(password, credential)) {
+      sendHtml(response, 401, mockSsoPage(parameters, { error: "The university email or password is incorrect.", selectedEmail: email }));
+      return;
+    }
+    const code = crypto.randomBytes(32).toString("base64url");
+    mockAuthorizationCodes.set(code, { email, ...parameters, expiresAt: Date.now() + MOCK_SSO_CODE_TTL_MS });
+    redirect(response, mockSsoRedirect(parameters, { code }));
+    return;
+  }
+  if (url.pathname === "/mock-sso/token" && request.method === "POST") {
+    const body = await readFormBody(request);
+    if (body.grant_type !== "authorization_code" || !body.code || !body.code_verifier) {
+      throw new HttpError(400, "A valid authorization code and PKCE verifier are required.");
+    }
+    const authorization = mockAuthorizationCodes.get(body.code);
+    if (!authorization || authorization.expiresAt <= Date.now()) throw new HttpError(400, "The authorization code is invalid or expired.");
+    mockAuthorizationCodes.delete(body.code);
+    if (body.client_id !== authorization.clientId || body.redirect_uri !== authorization.redirectUri) {
+      throw new HttpError(400, "The authorization code was issued to a different client.");
+    }
+    const challenge = crypto.createHash("sha256").update(body.code_verifier).digest("base64url");
+    const actual = Buffer.from(challenge);
+    const expected = Buffer.from(authorization.codeChallenge);
+    if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
+      throw new HttpError(400, "PKCE verification failed.");
+    }
+    const person = readDatabase().people.find((item) => normalizeEmail(item.email) === authorization.email);
+    if (!person || person.status !== "Active") throw new HttpError(403, "This RESERVATA account is not active.");
+    sendJson(response, 200, {
+      access_token: createSession(authorization.email),
+      token_type: "Bearer",
+      expires_in: SESSION_TTL_MS / 1000,
+      scope: authorization.scope,
+      user: publicUser(person)
+    });
+    return;
+  }
+  throw new HttpError(404, "Mock SSO route not found.");
+}
+
 function same(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -920,7 +1221,7 @@ async function handleApi(request, response, url) {
   throw new HttpError(404, "API route not found.");
 }
 
-function serveStatic(response, pathname) {
+function serveStatic(request, response, pathname) {
   if (/^\/(data|aws|docs)(\/|$)/i.test(pathname)) {
     sendText(response, 404, "Not found");
     return;
@@ -936,12 +1237,21 @@ function serveStatic(response, pathname) {
     return;
   }
   const ext = path.extname(filePath);
-  response.writeHead(200, {
+  const acceptsGzip = /\bgzip\b/i.test(request.headers["accept-encoding"] || "") && COMPRESSIBLE_STATIC_TYPES.has(ext);
+  const longLivedAsset = /^\/(assets|images)\//i.test(pathname);
+  const headers = {
     "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-    "Cache-Control": "no-store",
+    "Cache-Control": longLivedAsset ? "public, max-age=31536000, immutable" : "no-cache",
     "X-Content-Type-Options": "nosniff"
-  });
-  fs.createReadStream(filePath).pipe(response);
+  };
+  if (acceptsGzip) {
+    headers["Content-Encoding"] = "gzip";
+    headers.Vary = "Accept-Encoding";
+  }
+  response.writeHead(200, headers);
+  const file = fs.createReadStream(filePath);
+  if (acceptsGzip) file.pipe(zlib.createGzip({ level: 6 })).pipe(response);
+  else file.pipe(response);
 }
 
 function createServer() {
@@ -952,7 +1262,11 @@ function createServer() {
         await handleApi(request, response, url);
         return;
       }
-      serveStatic(response, decodeURIComponent(url.pathname));
+      if (url.pathname.startsWith("/mock-sso/")) {
+        await handleMockSso(request, response, url);
+        return;
+      }
+      serveStatic(request, response, decodeURIComponent(url.pathname));
     } catch (error) {
       sendJson(response, error.status || 500, { error: error.status ? error.message : "Server error." });
     }

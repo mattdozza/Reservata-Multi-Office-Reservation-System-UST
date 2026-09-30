@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const { once } = require("node:events");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -22,6 +23,118 @@ const ACCOUNTS = [
   ["cics.visitor.requester@ust.edu.ph", "Visitor2026!", "OSG Requester"],
   ["facilities.admin@ust.edu.ph", "Facilities2026!", "Office Admin"]
 ];
+
+test("mock UST SSO completes an authorization-code PKCE flow with a single-use code", async () => {
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const verifier = "reservata-pkce-verifier-abcdefghijklmnopqrstuvwxyz-0123456789";
+  const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+  const request = {
+    response_type: "code",
+    client_id: "reservata-local",
+    redirect_uri: "http://127.0.0.1:5178/",
+    scope: "openid profile email",
+    state: "state-from-reservata",
+    code_challenge: challenge,
+    code_challenge_method: "S256"
+  };
+  const formHeaders = { "Content-Type": "application/x-www-form-urlencoded" };
+  const publicKeyResponse = await fetch(`${base}/mock-sso/public-key`);
+  assert.equal(publicKeyResponse.status, 200);
+  const publicKey = crypto.createPublicKey({ key: await publicKeyResponse.json(), format: "jwk" });
+  const encryptPassword = (password) => crypto.publicEncrypt({
+    key: publicKey,
+    padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: "sha256"
+  }, Buffer.from(password)).toString("base64");
+  const authorize = (password = ACCOUNTS[0][1], action = "continue") => {
+    const form = new URLSearchParams({ ...request, email: ACCOUNTS[0][0], encrypted_password: action === "cancel" ? "" : encryptPassword(password), action });
+    assert.equal(form.has("password"), false);
+    if (password) assert.doesNotMatch(form.toString(), new RegExp(password.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    return fetch(`${base}/mock-sso/authorize`, {
+      method: "POST",
+      headers: formHeaders,
+      body: form,
+      redirect: "manual"
+    });
+  };
+  try {
+    const page = await fetch(`${base}/mock-sso/authorize?${new URLSearchParams(request)}`);
+    assert.equal(page.status, 200);
+    const html = await page.text();
+    assert.match(html, /Mock Identity Provider/);
+    assert.match(html, /<input name="email" type="email"/);
+    assert.match(html, /name="encrypted_password"/);
+    assert.match(html, /src="\/mock-sso\/encrypt\.js"/);
+    assert.doesNotMatch(html, /name="password"/);
+    assert.doesNotMatch(html, /<select/);
+    assert.doesNotMatch(html, /student\.body\.requester@ust\.edu\.ph/);
+    assert.doesNotMatch(html, /Requester2026!/);
+
+    const hostile = await fetch(`${base}/mock-sso/authorize?${new URLSearchParams({ ...request, redirect_uri: "https://example.com/steal" })}`);
+    assert.equal(hostile.status, 400);
+    assert.doesNotMatch(await hostile.text(), /student\.body\.requester/);
+
+    const plaintext = await fetch(`${base}/mock-sso/authorize`, {
+      method: "POST",
+      headers: formHeaders,
+      body: new URLSearchParams({ ...request, email: ACCOUNTS[0][0], password: ACCOUNTS[0][1], action: "continue" }),
+      redirect: "manual"
+    });
+    assert.equal(plaintext.status, 401);
+
+    const invalid = await authorize("incorrect");
+    assert.equal(invalid.status, 401);
+    assert.match(await invalid.text(), /email or password is incorrect/);
+
+    const cancelled = await authorize("", "cancel");
+    assert.equal(cancelled.status, 302);
+    assert.equal(new URL(cancelled.headers.get("location")).searchParams.get("error"), "access_denied");
+
+    const approved = await authorize();
+    assert.equal(approved.status, 302);
+    const callback = new URL(approved.headers.get("location"));
+    assert.equal(callback.searchParams.get("state"), request.state);
+    const code = callback.searchParams.get("code");
+    assert.ok(code);
+
+    const exchange = await fetch(`${base}/mock-sso/token`, {
+      method: "POST",
+      headers: formHeaders,
+      body: new URLSearchParams({ grant_type: "authorization_code", code, code_verifier: verifier, client_id: request.client_id, redirect_uri: request.redirect_uri })
+    });
+    assert.equal(exchange.status, 200, await exchange.clone().text());
+    const tokens = await exchange.json();
+    assert.equal(tokens.token_type, "Bearer");
+    assert.equal(tokens.user.email, ACCOUNTS[0][0]);
+    assert.equal(tokens.user.role, "Requester");
+
+    const session = await fetch(`${base}/api/auth/session`, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+    assert.equal(session.status, 200);
+    assert.equal((await session.json()).user.role, "Requester");
+
+    const replay = await fetch(`${base}/mock-sso/token`, {
+      method: "POST",
+      headers: formHeaders,
+      body: new URLSearchParams({ grant_type: "authorization_code", code, code_verifier: verifier, client_id: request.client_id, redirect_uri: request.redirect_uri })
+    });
+    assert.equal(replay.status, 400);
+
+    const secondApproval = await authorize();
+    const secondCode = new URL(secondApproval.headers.get("location")).searchParams.get("code");
+    const wrongVerifier = await fetch(`${base}/mock-sso/token`, {
+      method: "POST",
+      headers: formHeaders,
+      body: new URLSearchParams({ grant_type: "authorization_code", code: secondCode, code_verifier: "wrong-verifier", client_id: request.client_id, redirect_uri: request.redirect_uri })
+    });
+    assert.equal(wrongVerifier.status, 400);
+    assert.match((await wrongVerifier.json()).error, /PKCE/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
 
 test("resource photos are stored privately and limited to the resource office", async () => {
   const dbPath = testDbPath;

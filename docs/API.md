@@ -61,9 +61,21 @@ Response:
 
 All local data routes require `Authorization: Bearer <local session token>`.
 
+## Mock UST SSO
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/mock-sso/authorize` | Display the local UST identity-provider sign-in page for a validated client, redirect URI, state, and PKCE challenge |
+| GET | `/mock-sso/public-key` | Return the current ephemeral RSA-OAEP public key used to encrypt the local mock password submission |
+| GET | `/mock-sso/encrypt.js` | Serve the restricted browser encryption client for the mock identity-provider form |
+| POST | `/mock-sso/authorize` | Authenticate a defense account and redirect with a short-lived single-use authorization code, or return `access_denied` when cancelled |
+| POST | `/mock-sso/token` | Exchange the code and PKCE verifier for an expiring local bearer session |
+
+The mock provider accepts only the `reservata-local` client, same-origin localhost redirect URIs, `response_type=code`, and `code_challenge_method=S256`. It does not issue a production JWT or represent the real UST identity service. When production environment variables are supplied, the frontend uses the university authorization and token endpoints instead.
+
 ## POST `/api/auth/login`
 
-Validates an active local defense account and returns its public user record, assigned role, office, and an expiring session token.
+Legacy local test endpoint used by API-level automated tests. The application interface does not call it; interactive sign-in uses the mock SSO endpoints above.
 
 ## GET `/api/auth/session`
 

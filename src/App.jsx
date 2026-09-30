@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import AppShell from "./components/AppShell.jsx";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { LoadingScreen } from "./components/Common.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { isViewAllowed, NAV_ITEMS } from "./config.js";
 import { ReservataStore } from "./store.js";
-import { completeSsoLogin, startSsoLogin } from "./services/ssoAuth.js";
-import ViewRouter from "./views/ViewRouter.jsx";
+import { completeSsoLogin } from "./services/ssoAuth.js";
 import { confirmLeaveForms } from "./shared/formSafety.js";
+
+const AppShell = lazy(() => import("./components/AppShell.jsx"));
+const ViewRouter = lazy(() => import("./views/ViewRouter.jsx"));
 
 export default function App() {
   const storeRef = useRef(new ReservataStore());
@@ -89,12 +90,6 @@ export default function App() {
     [refresh, showToast],
   );
 
-  async function login({ email, password }) {
-    const signedIn = await perform(() => store.login(email, password));
-    if (signedIn) { setSelectedResourceId(""); setSelectedSchedule(null); }
-    return signedIn;
-  }
-
   async function logout() {
     if (!confirmLeaveForms()) return;
     await store.logout();
@@ -140,28 +135,26 @@ export default function App() {
         {toast}
       </div>
       {!store.session.activeRole ? (
-        <LoginScreen
-          store={store}
-          onLogin={login}
-          onSsoLogin={() => perform(startSsoLogin)}
-        />
+        <LoginScreen />
       ) : (
-        <AppShell
-          store={store}
-          onNavigate={navigate}
-          onLogout={logout}
-          onReset={reset}
-          onNotification={showNotifications}
-        >
-          <ViewRouter
+        <Suspense fallback={<LoadingScreen />}>
+          <AppShell
             store={store}
-            selectedResourceId={selectedResourceId}
-            selectedSchedule={selectedSchedule}
-            onAction={perform}
             onNavigate={navigate}
-            onReserve={reserve}
-          />
-        </AppShell>
+            onLogout={logout}
+            onReset={reset}
+            onNotification={showNotifications}
+          >
+            <ViewRouter
+              store={store}
+              selectedResourceId={selectedResourceId}
+              selectedSchedule={selectedSchedule}
+              onAction={perform}
+              onNavigate={navigate}
+              onReserve={reserve}
+            />
+          </AppShell>
+        </Suspense>
       )}
     </>
   );

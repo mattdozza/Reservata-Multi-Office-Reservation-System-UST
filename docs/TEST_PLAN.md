@@ -303,6 +303,26 @@ Expected result:
 - The SAM template passes linting.
 - All JavaScript Lambda dependencies are installed and build artifacts are generated.
 
+## TC-014A Mock UST SSO
+
+Steps:
+
+1. Start the local application and select **Sign in with Mock UST SSO**.
+2. Confirm the browser opens the separate Mock UST Identity Provider page.
+3. Cancel once and confirm RESERVATA returns to the login screen with an error message.
+4. Start again, enter a defense account email and password, and continue.
+5. Confirm the browser returns to RESERVATA and opens the correct role workspace.
+6. Refresh, sign out, and try an incorrect password.
+
+Expected result:
+
+- The provider preserves OAuth state and requires Authorization Code + PKCE S256.
+- The login request contains `encrypted_password` ciphertext and no plaintext `password` field; plaintext fallback submissions are rejected.
+- Credentials are entered only on the mock provider page; the RESERVATA login page never accepts a password.
+- The returned email maps to the role and office stored in RESERVATA; the user cannot choose either value.
+- Authorization codes are short-lived, single-use, restricted to the local client and redirect origin, and cannot be exchanged with a wrong verifier.
+- Refresh restores a valid session, logout invalidates it, and invalid credentials do not return an authorization code.
+
 ## TC-015 University SSO and Cloud RBAC
 
 Steps:

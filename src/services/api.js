@@ -8,7 +8,7 @@ function localToken() {
   return sessionStorage.getItem(LOCAL_TOKEN_KEY) || "";
 }
 
-function setLocalToken(token) {
+export function setLocalAccessToken(token) {
   if (token) sessionStorage.setItem(LOCAL_TOKEN_KEY, token);
   else sessionStorage.removeItem(LOCAL_TOKEN_KEY);
 }
@@ -33,22 +33,11 @@ async function authenticatedFetch(path, options = {}) {
   return response;
 }
 
-export async function loginLocalAccount(email, password) {
-  const response = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
-  });
-  const result = await parseResponse(response);
-  setLocalToken(result.token);
-  return result.user;
-}
-
 export async function restoreLocalAccount() {
   if (!localToken()) return null;
   const response = await authenticatedFetch("/api/auth/session");
   if (response.status === 401 || response.status === 403) {
-    setLocalToken(null);
+    setLocalAccessToken(null);
     return null;
   }
   return (await parseResponse(response)).user;
@@ -58,7 +47,7 @@ export async function logoutLocalAccount() {
   if (localToken()) {
     await authenticatedFetch("/api/auth/logout", { method: "POST" }).catch(() => null);
   }
-  setLocalToken(null);
+  setLocalAccessToken(null);
 }
 
 export async function loadDatabase() {

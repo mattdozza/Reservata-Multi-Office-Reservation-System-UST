@@ -1,21 +1,24 @@
-import { useState } from "react";
-import { CalendarCheck, ClipboardCheck, Eye, EyeOff, LockKeyhole, LogIn, Mail, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarCheck, ClipboardCheck, LogIn, ShieldCheck } from "lucide-react";
+import { prepareSsoLogin, ssoProviderLabel } from "../services/ssoAuth.js";
 
-export default function LoginScreen({ store, onLogin, onSsoLogin }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+export default function LoginScreen() {
+  const [loginUrl, setLoginUrl] = useState("");
+  const [loginError, setLoginError] = useState("");
 
-  async function submit(event) {
-    event.preventDefault();
-    setSubmitting(true);
-    try {
-      await onLogin({ email: email.trim(), password });
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  useEffect(() => {
+    let active = true;
+    prepareSsoLogin()
+      .then((url) => {
+        if (active) setLoginUrl(url);
+      })
+      .catch((error) => {
+        if (active) setLoginError(error.message || "University SSO sign-in is unavailable.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <main className="login-screen">
@@ -37,60 +40,15 @@ export default function LoginScreen({ store, onLogin, onSsoLogin }) {
           <p className="login-copy">A unified UST operations portal for venue reservations, equipment and vehicle requests, payment verification, visitor access, and approval tracking.</p>
         </div>
 
-        {store.backendMode === "aws" ? (
-          <button className="primary-button sso-button" onClick={onSsoLogin} type="button">
-            <LogIn aria-hidden="true" size={18} />
-            Sign in with University SSO
-          </button>
-        ) : (
-          <form className="login-form" onSubmit={submit}>
-            <label className="login-field">
-              <span>University email</span>
-              <span className="login-input-wrap">
-                <Mail aria-hidden="true" size={18} />
-                <input
-                  autoComplete="username"
-                  inputMode="email"
-                  name="email"
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="name@ust.edu.ph"
-                  required
-                  type="email"
-                  value={email}
-                />
-              </span>
-            </label>
-
-            <label className="login-field">
-              <span>Password</span>
-              <span className="login-input-wrap">
-                <LockKeyhole aria-hidden="true" size={18} />
-                <input
-                  autoComplete="current-password"
-                  name="password"
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                />
-                <button
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="password-toggle"
-                  onClick={() => setShowPassword((value) => !value)}
-                  title={showPassword ? "Hide password" : "Show password"}
-                  type="button"
-                >
-                  {showPassword ? <EyeOff aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}
-                </button>
-              </span>
-            </label>
-
-            <button className="primary-button login-submit" disabled={submitting} type="submit">
-              <LogIn aria-hidden="true" size={18} />
-              {submitting ? "Signing in..." : "Sign in"}
-            </button>
-          </form>
-        )}
+        <a
+          aria-disabled={!loginUrl}
+          className="primary-button login-submit sso-button"
+          href={loginUrl || undefined}
+        >
+          <LogIn aria-hidden="true" size={18} />
+          Sign in with {ssoProviderLabel}
+        </a>
+        {loginError ? <p className="login-error" role="alert">{loginError}</p> : null}
       </section>
 
       <aside className="login-preview" aria-label="University of Santo Tomas Main Building">

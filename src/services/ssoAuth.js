@@ -1,9 +1,11 @@
-import { setSsoAccessToken } from "./awsApi.js";
+import { setLocalAccessToken } from "./api.js";
+import { awsBackendConfigured, setSsoAccessToken } from "./awsApi.js";
 
+const mockSso = !awsBackendConfigured;
 const config = {
-  authorizeUrl: import.meta.env.VITE_SSO_AUTHORIZE_URL,
-  tokenUrl: import.meta.env.VITE_SSO_TOKEN_URL,
-  clientId: import.meta.env.VITE_SSO_CLIENT_ID,
+  authorizeUrl: import.meta.env.VITE_SSO_AUTHORIZE_URL || (mockSso ? "/mock-sso/authorize" : ""),
+  tokenUrl: import.meta.env.VITE_SSO_TOKEN_URL || (mockSso ? "/mock-sso/token" : ""),
+  clientId: import.meta.env.VITE_SSO_CLIENT_ID || (mockSso ? "reservata-local" : ""),
   redirectUri: import.meta.env.VITE_SSO_REDIRECT_URI || window.location.origin,
   scope: import.meta.env.VITE_SSO_SCOPE || "openid profile email"
 };
@@ -12,6 +14,7 @@ const VERIFIER_KEY = "reservata.pkceVerifier";
 const STATE_KEY = "reservata.oidcState";
 
 export const ssoClientConfigured = Boolean(config.authorizeUrl && config.tokenUrl && config.clientId);
+export const ssoProviderLabel = mockSso ? "Mock UST SSO" : "University SSO";
 
 function randomValue(length = 48) {
   const bytes = crypto.getRandomValues(new Uint8Array(length));
@@ -27,7 +30,7 @@ async function challengeFor(verifier) {
   return base64Url(new Uint8Array(digest));
 }
 
-export async function startSsoLogin() {
+export async function prepareSsoLogin() {
   if (!ssoClientConfigured) throw new Error("University SSO client settings are incomplete.");
   const verifier = randomValue();
   const state = randomValue(24);
@@ -42,7 +45,7 @@ export async function startSsoLogin() {
     code_challenge: await challengeFor(verifier),
     code_challenge_method: "S256"
   });
-  window.location.assign(`${config.authorizeUrl}?${parameters}`);
+  return `${config.authorizeUrl}?${parameters}`;
 }
 
 export async function completeSsoLogin() {
@@ -50,12 +53,23 @@ export async function completeSsoLogin() {
   const code = currentUrl.searchParams.get("code");
   const returnedState = currentUrl.searchParams.get("state");
   const error = currentUrl.searchParams.get("error");
-  if (error) throw new Error(currentUrl.searchParams.get("error_description") || "University SSO login was not completed.");
-  if (!code) return false;
+  if (!code && !error) return false;
 
   const expectedState = sessionStorage.getItem(STATE_KEY);
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
-  if (!expectedState || returnedState !== expectedState || !verifier) throw new Error("University SSO response validation failed.");
+  if (!expectedState || returnedState !== expectedState) throw new Error("University SSO response validation failed.");
+  const clearCallback = () => {
+    sessionStorage.removeItem(VERIFIER_KEY);
+    sessionStorage.removeItem(STATE_KEY);
+    for (const key of ["code", "state", "error", "error_description"]) currentUrl.searchParams.delete(key);
+    window.history.replaceState({}, document.title, currentUrl.pathname + currentUrl.search + currentUrl.hash);
+  };
+  if (error) {
+    const message = currentUrl.searchParams.get("error_description") || "University SSO login was not completed.";
+    clearCallback();
+    throw new Error(message);
+  }
+  if (!verifier) throw new Error("University SSO response validation failed.");
 
   const response = await fetch(config.tokenUrl, {
     method: "POST",
@@ -71,11 +85,14 @@ export async function completeSsoLogin() {
   const tokens = await response.json().catch(() => ({}));
   if (!response.ok || (!tokens.id_token && !tokens.access_token)) throw new Error(tokens.error_description || "University SSO token exchange failed.");
 
-  setSsoAccessToken(tokens.id_token || tokens.access_token);
-  sessionStorage.removeItem(VERIFIER_KEY);
-  sessionStorage.removeItem(STATE_KEY);
-  currentUrl.searchParams.delete("code");
-  currentUrl.searchParams.delete("state");
-  window.history.replaceState({}, document.title, currentUrl.pathname + currentUrl.search + currentUrl.hash);
+  const token = tokens.id_token || tokens.access_token;
+  if (mockSso) {
+    setLocalAccessToken(token);
+    setSsoAccessToken(null);
+  } else {
+    setSsoAccessToken(token);
+    setLocalAccessToken(null);
+  }
+  clearCallback();
   return true;
 }
