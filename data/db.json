@@ -443,6 +443,42 @@
       ],
       "expiredAt": "2026-09-07T11:01:36.457Z",
       "expiryReason": "Scheduled end time passed before final confirmation."
+    },
+    {
+      "id": "REQ-2026-4BAB6004",
+      "requester": "Faculty Requester",
+      "resourceId": "R-002",
+      "resourceName": "Bobots Kit",
+      "resourceAssetTag": "EDTECH-BOTKIT-002",
+      "office": "EdTech",
+      "type": "Equipment",
+      "date": "2026-10-01",
+      "start": "08:00",
+      "end": "09:00",
+      "quantity": 1,
+      "purpose": "TYTYTYTYTYTYTYTYTYTYTYTYYT",
+      "setupRequired": false,
+      "externalVisitors": false,
+      "parkingRequired": false,
+      "status": "Under Owner Review",
+      "submittedAt": "Sep 30, 2026, 4:14 PM",
+      "requiresPayment": false,
+      "workflowTemplateId": "WF-BASIC",
+      "workflowName": "Basic Resource Approval",
+      "rescheduleCount": 0,
+      "approvalSteps": [
+        {
+          "id": "REQ-2026-4BAB6004-OWNER",
+          "templateStepId": "OWNER",
+          "name": "Resource Owner Review",
+          "office": "EdTech",
+          "sequence": 1,
+          "condition": "always",
+          "status": "Pending",
+          "decidedBy": "",
+          "decidedAt": ""
+        }
+      ]
     }
   ],
   "payments": [
@@ -521,6 +557,20 @@
       "plate": "GOV 883",
       "parking": "B1",
       "status": "Arrived"
+    },
+    {
+      "id": "VIS-90D2F66A",
+      "requester": "Faculty Requester",
+      "visitor": "ABCD",
+      "organization": "ACN",
+      "purpose": "VISIT VISI VIST",
+      "date": "2026-09-30",
+      "time": "04:12",
+      "guests": 6,
+      "cars": 2,
+      "plate": "ABCD123",
+      "parking": "",
+      "status": "Pending"
     }
   ],
   "people": [
@@ -529,6 +579,7 @@
       "email": "student.body.requester@ust.edu.ph",
       "office": "Student Body",
       "role": "Requester",
+      "requesterType": "Student",
       "status": "Active"
     },
     {
@@ -556,7 +607,8 @@
       "name": "CICS Visitor Requester",
       "email": "cics.visitor.requester@ust.edu.ph",
       "office": "CICS",
-      "role": "OSG Requester",
+      "role": "Requester",
+      "requesterType": "Student Org Rep",
       "status": "Active"
     },
     {
@@ -578,6 +630,14 @@
       "email": "tawnisilva@ust.edu.ph",
       "office": "Faculty of Arts and Letters",
       "role": "Office Admin",
+      "status": "Inactive"
+    },
+    {
+      "name": "Faculty Requester",
+      "email": "faculty.requester@ust.edu.ph",
+      "office": "College of Science",
+      "role": "Requester",
+      "requesterType": "Faculty",
       "status": "Active"
     }
   ],
@@ -662,6 +722,22 @@
           "office": "OSG",
           "sequence": 2,
           "condition": "parkingRequired"
+        }
+      ]
+    },
+    {
+      "id": "WF-1790743218401",
+      "name": "Matthew",
+      "resourceType": "Facility",
+      "status": "Active",
+      "steps": [
+        {
+          "id": "OWNER",
+          "name": "Resource Owner Review",
+          "office": "$OWNER",
+          "sequence": 1,
+          "condition": "always",
+          "approvingBodyId": ""
         }
       ]
     }
@@ -918,9 +994,58 @@
       "message": "Main Chapel request was submitted and routed to Simbahayan.",
       "unread": false,
       "office": "Simbahayan"
+    },
+    {
+      "id": "N-61141C7F",
+      "user": "EdTech",
+      "message": "Bobots Kit: new reservation request from Faculty Requester needs review.",
+      "type": "Reservation",
+      "unread": true,
+      "time": "Sep 30, 2026, 4:14 PM"
+    },
+    {
+      "id": "N-84573835",
+      "user": "Faculty Requester",
+      "message": "Bobots Kit request was submitted and routed to EdTech.",
+      "type": "Reservation",
+      "unread": true,
+      "time": "Sep 30, 2026, 4:14 PM",
+      "office": "EdTech"
+    },
+    {
+      "id": "N-A90A2B1F",
+      "user": "Faculty Requester",
+      "message": "ABCD: visitor access request submitted to OSG for review.",
+      "type": "Visitor",
+      "unread": true,
+      "time": "Sep 30, 2026, 4:10 PM"
     }
   ],
   "activity": [
+    {
+      "id": "ACT-d499c89a-8893-4270-8ac2-74aabc502964",
+      "action": "User account created",
+      "actor": "All Offices Super Admin",
+      "target": "Faculty Requester",
+      "details": "faculty.requester@ust.edu.ph",
+      "time": "2026-09-30T07:51:18.717Z"
+    },
+    {
+      "id": "ACT-CC78CAE2",
+      "action": "User access updated",
+      "actor": "All Offices Super Admin",
+      "target": "Tawni Silva: Inactive",
+      "details": "",
+      "time": "Sep 30, 2026, 2:50 PM"
+    },
+    {
+      "id": "ACT-0E2FD3D8",
+      "action": "Approval workflow created",
+      "actor": "All Offices Super Admin",
+      "target": "Matthew",
+      "details": "",
+      "time": "Sep 30, 2026, 12:40 PM"
+    },
     {
       "id": "ACT-3c590956-4d15-4490-8da5-ecba7731cb2f",
       "action": "Reservation completed",
@@ -1108,6 +1233,23 @@
       "actor": "Student Body Requester",
       "target": "Main Chapel",
       "time": "Just now"
+    },
+    {
+      "id": "ACT-FF115545",
+      "action": "Reservation submitted",
+      "actor": "Faculty Requester",
+      "target": "Bobots Kit",
+      "details": "2026-10-01 08:00-09:00",
+      "reservationId": "REQ-2026-4BAB6004",
+      "time": "Sep 30, 2026, 4:14 PM"
+    },
+    {
+      "id": "ACT-18A7B8D6",
+      "action": "Visitor request submitted",
+      "actor": "Faculty Requester",
+      "target": "ABCD",
+      "details": "2026-09-30 04:12",
+      "time": "Sep 30, 2026, 4:10 PM"
     }
   ]
 }

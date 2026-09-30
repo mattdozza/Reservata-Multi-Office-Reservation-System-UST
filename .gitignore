@@ -4,3 +4,4 @@ dist/
 .DS_Store
 *.log
 data/resource-photos/
+.claude/

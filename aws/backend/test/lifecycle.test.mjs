@@ -7,7 +7,8 @@ Object.assign(process.env, {
   PAYMENTS_TABLE: "Payments",
   SYSTEM_SETTINGS_TABLE: "SystemSettings",
   NOTIFICATIONS_TABLE: "Notifications",
-  ACTIVITY_TABLE: "Activity"
+  ACTIVITY_TABLE: "Activity",
+  RESERVATION_HISTORY_TABLE: "ReservationHistory"
 });
 
 const { expireReservations, isReservationOverdue } = await import("../src/lib/reservationLifecycle.mjs");
@@ -57,6 +58,11 @@ test("reservation lifecycle expires unfinished reservations and releases locks",
   assert.equal(payment.status, "Expired");
   assert.ok(transactions[0].some((item) => item.Delete?.TableName === "Locks"));
   assert.ok(transactions[0].some((item) => item.Update?.TableName === "Payments"));
+  const history = transactions[0].find((item) => item.Put?.TableName === "ReservationHistory");
+  assert.ok(history, "expected a ReservationHistory row for the auto-expire transition");
+  assert.equal(history.Put.Item.previousStatus, "For Payment");
+  assert.equal(history.Put.Item.newStatus, "Expired");
+  assert.equal(history.Put.Item.changedBy, "System");
 });
 
 test("reservation lifecycle completes confirmed reservations after use", async () => {
@@ -84,6 +90,11 @@ test("reservation lifecycle completes confirmed reservations after use", async (
   assert.equal(reservation.status, "Completed");
   assert.ok(transactions[0].some((item) => item.Update?.ExpressionAttributeValues?.[":completed"] === "Completed"));
   assert.ok(transactions[0].some((item) => item.Delete?.TableName === "Locks"));
+  const history = transactions[0].find((item) => item.Put?.TableName === "ReservationHistory");
+  assert.ok(history, "expected a ReservationHistory row for the auto-complete transition");
+  assert.equal(history.Put.Item.previousStatus, "Confirmed");
+  assert.equal(history.Put.Item.newStatus, "Completed");
+  assert.equal(history.Put.Item.changedBy, "System");
 });
 
 test("reservation lifecycle hydrates payment deadlines from resource overrides", async () => {

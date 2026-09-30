@@ -2,10 +2,11 @@ import ManagedForm from "../../components/ManagedForm.jsx";
 import { useState } from "react";
 import { Archive, Edit3 } from "lucide-react";
 import { PageTabs, TabPanel } from "../../components/PageTabs.jsx";
-import { ActivityRows, Badge, CardHeader, EmptyState } from "../../components/Common.jsx";
+import { ActivityRows, Badge, CardHeader, DetailModal, EmptyState } from "../../components/Common.jsx";
+import { REQUESTER_TYPES } from "../../config.js";
 import { downloadCsv, sortBy } from "../../shared/utils.js";
 
-const ROLE_OPTIONS = ["Requester", "Office Admin", "Super Admin", "OSG Admin", "OSG Requester"];
+const ROLE_OPTIONS = ["Requester", "Office Admin", "Super Admin", "OSG Admin"];
 export function OfficeRows({ store, onNavigate, onEdit, onArchive }) {
   const configured = store.data.offices?.length
     ? store.data.offices
@@ -94,11 +95,13 @@ export function UsersView({ store, onAction }) {
   const [activeTab, setActiveTab] = useState("directory");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("name");
+  const [tempPasswordInfo, setTempPasswordInfo] = useState(null);
   const [draft, setDraft] = useState({
     name: "",
     email: "",
-    office: store.data.offices.find((office) => office.status === "Active")?.name || "All Offices",
+    office: "",
     role: "Requester",
+    requesterType: "Student",
     status: "Active"
   });
   const normalized = query.trim().toLowerCase();
@@ -114,12 +117,17 @@ export function UsersView({ store, onAction }) {
     event.preventDefault();
     const saved = await onAction(() => store.createUser(draft), "SSO account provisioned.");
     if (saved) {
+      if (store.pendingTempPassword) {
+        setTempPasswordInfo({ name: draft.name, email: draft.email, password: store.pendingTempPassword });
+        store.pendingTempPassword = null;
+      }
       setActiveTab("directory");
       setDraft({
         name: "",
         email: "",
-        office: store.data.offices.find((office) => office.status === "Active")?.name || "All Offices",
+        office: "",
         role: "Requester",
+        requesterType: "Student",
         status: "Active"
       });
     }
@@ -133,6 +141,7 @@ export function UsersView({ store, onAction }) {
       if (field === "role" && value === "Office Admin" && next.office === "All Offices") {
         next.office = store.data.offices.find((office) => office.status === "Active")?.name || "";
       }
+      if (field === "role" && value === "Requester" && current.role !== "Requester") next.office = "";
       return next;
     });
   }
@@ -163,10 +172,26 @@ export function UsersView({ store, onAction }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="new-user-office">Office</label>
-            <select id="new-user-office" className="select" value={draft.office} onChange={(event) => update("office", event.target.value)} required>
-              {officeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
-            </select>
+            {draft.role === "Requester" ? (
+              <>
+                <label htmlFor="new-user-office">Department</label>
+                <input
+                  id="new-user-office"
+                  className="input"
+                  value={draft.office}
+                  onChange={(event) => update("office", event.target.value)}
+                  placeholder="e.g. College of Science"
+                  required
+                />
+              </>
+            ) : (
+              <>
+                <label htmlFor="new-user-office">Office</label>
+                <select id="new-user-office" className="select" value={draft.office} onChange={(event) => update("office", event.target.value)} required>
+                  {officeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
+                </select>
+              </>
+            )}
           </div>
           <div className="field">
             <label htmlFor="new-user-role">Role</label>
@@ -174,6 +199,14 @@ export function UsersView({ store, onAction }) {
               {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
             </select>
           </div>
+          {draft.role === "Requester" && (
+            <div className="field">
+              <label htmlFor="new-user-requester-type">Affiliation</label>
+              <select id="new-user-requester-type" className="select" value={draft.requesterType} onChange={(event) => update("requesterType", event.target.value)} required>
+                {REQUESTER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </div>
+          )}
           <div className="field">
             <label htmlFor="new-user-status">Account status</label>
             <select id="new-user-status" className="select" value={draft.status} onChange={(event) => update("status", event.target.value)} required>
@@ -214,7 +247,7 @@ export function UsersView({ store, onAction }) {
       </div>
       <article className="card table-wrap">
         <table>
-          <thead><tr><th>User</th><th>Office</th><th>Role</th><th>Account Status</th></tr></thead>
+          <thead><tr><th>User</th><th>Office</th><th>Role</th><th>Affiliation</th><th>Account Status</th></tr></thead>
           <tbody>
             {people.map((person) => (
               <tr key={person.email}>
@@ -230,6 +263,19 @@ export function UsersView({ store, onAction }) {
                   >
                     {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
                   </select>
+                </td>
+                <td>
+                  {person.role === "Requester" ? (
+                    <select
+                      aria-label={`Affiliation for ${person.name}`}
+                      className="input role-select"
+                      disabled={person.email === store.currentUser.email}
+                      onChange={(event) => onAction(() => store.updateUserRequesterType(person.email, event.target.value), "Affiliation updated.")}
+                      value={REQUESTER_TYPES.includes(person.requesterType) ? person.requesterType : "Student"}
+                    >
+                      {REQUESTER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                  ) : <span className="read-only-label">N/A</span>}
                 </td>
                 <td>
                   <select
@@ -254,6 +300,16 @@ export function UsersView({ store, onAction }) {
         {!people.length && <EmptyState>No matching users found.</EmptyState>}
       </article>
       </TabPanel>
+      {tempPasswordInfo && (
+        <DetailModal
+          title="Account created"
+          subtitle={`${tempPasswordInfo.name} · ${tempPasswordInfo.email}`}
+          onClose={() => setTempPasswordInfo(null)}
+        >
+          <p>Share this temporary password with the new user. They can change it anytime from their Profile page.</p>
+          <p className="detail-box"><strong>{tempPasswordInfo.password}</strong></p>
+        </DetailModal>
+      )}
     </>
   );
 }

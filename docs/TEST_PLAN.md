@@ -75,6 +75,20 @@ Expected result:
 - Submission is disabled or rejected before a conflicting reservation is created.
 - Suggested alternatives display available time slots and selecting one refreshes the form.
 
+## TC-002B Student Requester Resource Restriction
+
+Steps:
+
+1. Login as a Requester whose affiliation is Student (`student.body.requester@ust.edu.ph`).
+2. Open Browse Resources and New Request.
+3. Login as a Requester whose affiliation is Faculty, Staff, or Student Org Rep.
+4. Open Browse Resources and New Request.
+
+Expected result:
+
+- The Student account sees and can reserve only Equipment resources.
+- The Faculty/Staff/Student Org Rep account sees and can reserve Equipment, Facility, and Vehicle resources.
+
 ## TC-003 Prevent Invalid Time
 
 Steps:
@@ -195,14 +209,17 @@ Expected result:
 
 Steps:
 
-1. Login as OSG Requester.
+1. Login as a Requester whose affiliation is Student Org Rep (`cics.visitor.requester@ust.edu.ph`).
 2. Submit a visitor access request.
 3. Login as OSG Admin.
 4. Approve the visitor request.
+5. Login as a Requester whose affiliation is Student (`student.body.requester@ust.edu.ph`).
+6. Confirm New Visitor Request and My Visitor Requests are not shown.
 
 Expected result:
 
 - Visitor request changes from `Pending` to `Approved`.
+- Student requesters cannot see or submit visitor requests.
 
 ## TC-007 Arrival Monitor
 
@@ -223,10 +240,13 @@ Steps:
 1. Login as Super Admin.
 2. Open Users & Roles.
 3. Select a different role for another user.
+4. Change a Requester account's affiliation (Student, Faculty, Staff, or Student Org Rep).
 
 Expected result:
 
 - Role label changes and activity log records the update.
+- Changing a user's role to Requester without an affiliation defaults it to Student.
+- Affiliation can only be set for accounts with the Requester role.
 
 ## TC-009 Data Persistence
 

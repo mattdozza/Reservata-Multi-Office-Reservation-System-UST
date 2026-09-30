@@ -19,10 +19,15 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   const [availability, setAvailability] = useState({});
   const scheduleValid = schedule.date >= tomorrowIso() && schedule.start && schedule.end && schedule.start < schedule.end;
   const role = store.session.activeRole;
+  const isStudent = role === "requester" && store.currentUser.requesterType === "Student";
+  const allowedTypes = role === "requester"
+    ? (isStudent ? ["Equipment"] : ["Equipment", "Facility", "Vehicle"])
+    : null;
+  const typeTabs = allowedTypes ? ["All", ...allowedTypes] : RESOURCE_TYPES;
 
   const resources = (() => {
     let items = [...store.data.resources];
-    if (role === "requester") items = items.filter((item) => ["Equipment", "Facility", "Vehicle"].includes(item.type));
+    if (allowedTypes) items = items.filter((item) => allowedTypes.includes(item.type));
     if (role === "officeAdmin") items = store.officeResources;
     const normalized = query.trim().toLowerCase();
     items = items.filter((item) => {
@@ -60,13 +65,15 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   return (
     <>
       <div className="toolbar">
-        <div className="tabs" aria-label="Filter resources">
-          {RESOURCE_TYPES.map((item) => (
-            <button className={`tab ${filter === item ? "active" : ""}`} onClick={() => setFilter(item)} type="button" key={item}>
-              {item}
-            </button>
-          ))}
-        </div>
+        {role !== "requester" && (
+          <div className="tabs" aria-label="Filter resources">
+            {typeTabs.map((item) => (
+              <button className={`tab ${filter === item ? "active" : ""}`} onClick={() => setFilter(item)} type="button" key={item}>
+                {item}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="toolbar-group">
           <input
             className="input resource-search"
@@ -75,14 +82,22 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
             placeholder="Search resources"
             aria-label="Search resources"
           />
+          {role === "requester" && !isStudent && (
+            <select className="select status-filter" value={office} onChange={(event) => setOffice(event.target.value)} aria-label="Filter by office">
+              <option value="All">All Offices</option>
+              {[...new Set(store.data.resources.map((item) => item.office))].sort().map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          )}
           <select className="select status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter resource status">
             {RESOURCE_STATUSES.map((item) => <option key={item}>{item}</option>)}
           </select>
-          <select className="select status-filter" value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort resources">
-            <option value="name">Sort by name</option>
-            <option value="office">Sort by office</option>
-            <option value="status">Sort by status</option>
-          </select>
+          {role !== "requester" && (
+            <select className="select status-filter" value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort resources">
+              <option value="name">Sort by name</option>
+              <option value="office">Sort by office</option>
+              <option value="status">Sort by status</option>
+            </select>
+          )}
           {role === "officeAdmin" && (
             <button className="primary-button" onClick={() => onNavigate("officeSettings")} type="button">
               Manage Resources
@@ -90,17 +105,19 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
           )}
         </div>
       </div>
-      <div className="resource-filter-panel">
-        <div className="field"><label htmlFor="browse-office">Office</label><select id="browse-office" className="select" value={office} onChange={(event) => setOffice(event.target.value)}><option>All</option>{[...new Set(store.data.resources.map((item) => item.office))].sort().map((name) => <option key={name}>{name}</option>)}</select></div>
-        <div className="field"><label htmlFor="browse-capacity">Minimum capacity</label><input id="browse-capacity" className="input" type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} /></div>
-        <div className="field"><label htmlFor="browse-payment">Payment</label><select id="browse-payment" className="select" value={payment} onChange={(event) => setPayment(event.target.value)}><option>All</option><option>Free</option><option>Paid</option></select></div>
-        <div className="field"><label htmlFor="browse-date">Reservation date</label><input id="browse-date" className="input" type="date" min={tomorrowIso()} value={schedule.date} onChange={(event) => setSchedule((current) => ({ ...current, date: event.target.value }))} /></div>
-        <div className="field"><label htmlFor="browse-start">Start time</label><input id="browse-start" className="input" type="time" value={schedule.start} onChange={(event) => setSchedule((current) => ({ ...current, start: event.target.value }))} /></div>
-        <div className="field"><label htmlFor="browse-end">End time</label><input id="browse-end" className="input" type="time" value={schedule.end} onChange={(event) => setSchedule((current) => ({ ...current, end: event.target.value }))} /></div>
-        <label className="check-field"><input type="checkbox" checked={availabilityOnly} disabled={!scheduleValid} onChange={(event) => setAvailabilityOnly(event.target.checked)} /><span>Available for this schedule only</span></label>
-        <button className="secondary-button" type="button" onClick={() => { setOffice("All"); setCapacity(""); setPayment("All"); setSchedule({ date: "", start: "08:00", end: "09:00" }); setAvailabilityOnly(false); setQuery(""); setFilter("All"); setStatusFilter("All"); }}>Clear filters</button>
-        {schedule.date && !scheduleValid && <p className="field-error">Choose tomorrow or later, with an end time after the start time.</p>}
-      </div>
+      {role !== "requester" && (
+        <div className="resource-filter-panel">
+          <div className="field"><label htmlFor="browse-office">Office</label><select id="browse-office" className="select" value={office} onChange={(event) => setOffice(event.target.value)}><option>All</option>{[...new Set(store.data.resources.map((item) => item.office))].sort().map((name) => <option key={name}>{name}</option>)}</select></div>
+          <div className="field"><label htmlFor="browse-capacity">Minimum capacity</label><input id="browse-capacity" className="input" type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} /></div>
+          <div className="field"><label htmlFor="browse-payment">Payment</label><select id="browse-payment" className="select" value={payment} onChange={(event) => setPayment(event.target.value)}><option>All</option><option>Free</option><option>Paid</option></select></div>
+          <div className="field"><label htmlFor="browse-date">Reservation date</label><input id="browse-date" className="input" type="date" min={tomorrowIso()} value={schedule.date} onChange={(event) => setSchedule((current) => ({ ...current, date: event.target.value }))} /></div>
+          <div className="field"><label htmlFor="browse-start">Start time</label><input id="browse-start" className="input" type="time" value={schedule.start} onChange={(event) => setSchedule((current) => ({ ...current, start: event.target.value }))} /></div>
+          <div className="field"><label htmlFor="browse-end">End time</label><input id="browse-end" className="input" type="time" value={schedule.end} onChange={(event) => setSchedule((current) => ({ ...current, end: event.target.value }))} /></div>
+          <label className="check-field"><input type="checkbox" checked={availabilityOnly} disabled={!scheduleValid} onChange={(event) => setAvailabilityOnly(event.target.checked)} /><span>Available for this schedule only</span></label>
+          <button className="secondary-button" type="button" onClick={() => { setOffice("All"); setCapacity(""); setPayment("All"); setSchedule({ date: "", start: "08:00", end: "09:00" }); setAvailabilityOnly(false); setQuery(""); setFilter("All"); setStatusFilter("All"); }}>Clear filters</button>
+          {schedule.date && !scheduleValid && <p className="field-error">Choose tomorrow or later, with an end time after the start time.</p>}
+        </div>
+      )}
       <div className="grid four-col">
         {visible.map((resource) => (
           <article className="card resource-card" key={resource.id}>

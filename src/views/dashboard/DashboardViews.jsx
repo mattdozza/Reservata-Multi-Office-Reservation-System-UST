@@ -125,6 +125,7 @@ function OfficeAdminDashboard({ store, onAction }) {
             office={store.officeScope}
             onApprove={(id, stepId, reservation) => onAction(() => store.approveReservation(id, stepId), approvalSuccessMessage(reservation, stepId))}
             onReject={(id, stepId, reason) => onAction(() => store.rejectReservation(id, stepId, reason), "Reservation rejected.")}
+            onAction={onAction}
           />
         </article>
         <article className="card"><CardHeader title="Resource health" subtitle="Availability by resource" /><ResourceMiniRows items={store.officeResources} /></article>
@@ -214,32 +215,11 @@ function OsgAdminDashboard({ store, onNavigate, onAction }) {
   );
 }
 
-function OsgRequesterDashboard({ store, onNavigate }) {
-  const mine = store.data.visitors.filter((item) => item.requester === store.currentUser.name);
-  return (
-    <>
-      <div className="hero">
-        <span className="eyebrow">OSG Visitor Access</span>
-        <h2>Submit guest details early for gate passes, parking, and arrival monitoring.</h2>
-        <p>Offices can submit visitor details to OSG and track approval from this portal.</p>
-        <button className="primary-button hero-action" onClick={() => onNavigate("newVisitor")} type="button">Create Visitor Request</button>
-      </div>
-      <div className="section-gap">
-        <Metrics columns="three-col" items={[
-          metric("My Visitor Requests", mine.length, "Submitted to OSG", "blue"),
-          metric("Pending", mine.filter((item) => item.status === "Pending").length, "Awaiting OSG review", "yellow"),
-          metric("Approved", mine.filter((item) => ["Approved", "Arrived"].includes(item.status)).length, "Ready for entry", "green")
-        ]} />
-      </div>
-    </>
-  );
-}
 
 export default function DashboardView(props) {
   const role = props.store.session.activeRole;
-  if (role === "requester") return <RequesterDashboard {...props} />;
   if (role === "officeAdmin") return <OfficeAdminDashboard {...props} />;
   if (role === "superAdmin") return <SuperAdminDashboard {...props} />;
   if (role === "osgAdmin") return <OsgAdminDashboard {...props} />;
-  return <OsgRequesterDashboard {...props} />;
+  return <RequesterDashboard {...props} />;
 }

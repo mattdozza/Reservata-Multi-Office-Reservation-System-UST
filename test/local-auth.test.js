@@ -7,11 +7,15 @@ const test = require("node:test");
 const os = require("node:os");
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "reservata-tests-"));
 const testDbPath = path.join(testDirectory, "db.json");
+const testAccountsPath = path.join(testDirectory, "accounts.json");
 fs.copyFileSync(path.join(__dirname, "..", "data", "db.json"), testDbPath);
+fs.copyFileSync(path.join(__dirname, "..", "data", "accounts.json"), testAccountsPath);
 process.env.RESERVATA_DB_PATH = testDbPath;
+process.env.RESERVATA_ACCOUNTS_PATH = testAccountsPath;
 const { createServer } = require("../server.js");
 test.after(() => {
   fs.unlinkSync(testDbPath);
+  fs.unlinkSync(testAccountsPath);
   fs.rmdirSync(testDirectory);
 });
 
@@ -20,7 +24,7 @@ const ACCOUNTS = [
   ["simbahayan.admin@ust.edu.ph", "OfficeAdmin2026!", "Office Admin"],
   ["all.offices.admin@ust.edu.ph", "SuperAdmin2026!", "Super Admin"],
   ["osg.admin@ust.edu.ph", "OsgAdmin2026!", "OSG Admin"],
-  ["cics.visitor.requester@ust.edu.ph", "Visitor2026!", "OSG Requester"],
+  ["cics.visitor.requester@ust.edu.ph", "Visitor2026!", "Requester"],
   ["facilities.admin@ust.edu.ph", "Facilities2026!", "Office Admin"]
 ];
 
@@ -162,7 +166,7 @@ test("resource photos are stored privately and limited to the resource office", 
     photoPath = path.join(__dirname, "..", "data", "resource-photos", key);
     assert.equal((await fetch(`${base}/api/resource-photos/${key}`, { headers: requester })).status, 404);
     const state = await (await fetch(`${base}/api/state`, { headers: admin })).json();
-    const resource = state.resources.find((item) => item.status === "Available" && item.type !== "Visitor");
+    const resource = state.resources.find((item) => item.status === "Available" && item.type === "Equipment");
     assert.ok(resource);
     resource.photoKey = key;
     const saved = await fetch(`${base}/api/state`, { method: "PUT", headers: admin, body: JSON.stringify(state) });
@@ -231,7 +235,12 @@ test("local login authenticates accounts and derives their assigned roles", asyn
       if (role !== "Super Admin") assert.deepEqual(state.people.map((item) => item.email), [email]);
       if (role === "Requester") {
         assert.ok(state.reservations.every((item) => item.requester === result.user.name));
-        assert.equal(state.visitors.length, 0);
+        if (result.user.requesterType === "Student") {
+          assert.equal(state.visitors.length, 0);
+          assert.ok(state.resources.every((item) => item.type === "Equipment"));
+        } else {
+          assert.ok(state.visitors.every((item) => item.requester === result.user.name));
+        }
         const tampered = structuredClone(state);
         tampered.resources.push({ id: "R-FORBIDDEN", name: "Foreign Resource", office: "OSG", status: "Available" });
         const forbidden = await fetch(`${baseUrl}/api/state`, {
@@ -247,7 +256,6 @@ test("local login authenticates accounts and derives their assigned roles", asyn
           item.office === result.user.office || item.approvalSteps?.some((step) => step.office === result.user.office)
         ));
       }
-      if (role === "OSG Requester") assert.ok(state.visitors.every((item) => item.requester === result.user.name));
       if (role === "Super Admin") {
         assert.ok(state.people.length >= ACCOUNTS.length);
         const tampered = structuredClone(state);
@@ -891,3 +899,161 @@ test("office admins can mark office notifications read without accessing private
     fs.writeFileSync(dbPath, originalDatabase);
   }
 });
+
+test("Student requesters cannot submit visitor requests but Student Org Rep requesters can", async () => {
+  const dbPath = testDbPath;
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const login = async (email, password) => {
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    const { token } = await response.json();
+    return token;
+  };
+
+  try {
+    const studentToken = await login("student.body.requester@ust.edu.ph", "Requester2026!");
+    const studentState = await (await fetch(`${baseUrl}/api/state`, { headers: { Authorization: `Bearer ${studentToken}` } })).json();
+    studentState.visitors.unshift({
+      id: "VIS-STUDENT-BLOCKED", requester: "Student Body Requester", visitor: "Guest", organization: "Org",
+      purpose: "Meeting", date: "2099-01-01", time: "09:00", guests: 1, cars: 0, plate: "", parking: "", status: "Pending"
+    });
+    const studentSave = await fetch(`${baseUrl}/api/state`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${studentToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(studentState)
+    });
+    assert.equal(studentSave.status, 403);
+
+    const orgRepToken = await login("cics.visitor.requester@ust.edu.ph", "Visitor2026!");
+    const orgRepState = await (await fetch(`${baseUrl}/api/state`, { headers: { Authorization: `Bearer ${orgRepToken}` } })).json();
+    orgRepState.visitors.unshift({
+      id: "VIS-ORGREP-ALLOWED", requester: "CICS Visitor Requester", visitor: "Guest", organization: "Org",
+      purpose: "Meeting", date: "2099-01-01", time: "09:00", guests: 1, cars: 0, plate: "", parking: "", status: "Pending"
+    });
+    const orgRepSave = await fetch(`${baseUrl}/api/state`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${orgRepToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(orgRepState)
+    });
+    const orgRepSaveBody = await orgRepSave.json();
+    assert.equal(orgRepSave.status, 200, orgRepSaveBody.error);
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+  }
+});
+
+test("Super Admin can provision a local account with a generated temporary password", async () => {
+  const dbPath = testDbPath;
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const originalAccounts = fs.readFileSync(testAccountsPath, "utf8");
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const login = async (email, password) => {
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    return response.json();
+  };
+
+  try {
+    const superAdminLogin = await login("all.offices.admin@ust.edu.ph", "SuperAdmin2026!");
+    const superAdminToken = superAdminLogin.token;
+
+    const denied = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${(await login("student.body.requester@ust.edu.ph", "Requester2026!")).token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Student", email: "new.student@ust.edu.ph", office: "EdTech", role: "Requester", requesterType: "Student", status: "Active" })
+    });
+    assert.equal(denied.status, 403);
+
+    const created = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${superAdminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Student", email: "new.student@ust.edu.ph", office: "EdTech", role: "Requester", requesterType: "Student", status: "Active" })
+    });
+    const createdBody = await created.json();
+    assert.equal(created.status, 201, createdBody.error);
+    assert.ok(createdBody.tempPassword);
+    assert.equal(createdBody.user.email, "new.student@ust.edu.ph");
+    assert.equal(createdBody.user.requesterType, "Student");
+
+    const newAccountLogin = await login("new.student@ust.edu.ph", createdBody.tempPassword);
+    assert.ok(newAccountLogin.token);
+    assert.equal(newAccountLogin.user.email, "new.student@ust.edu.ph");
+
+    const duplicate = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${superAdminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Duplicate", email: "new.student@ust.edu.ph", office: "EdTech", role: "Requester", requesterType: "Student", status: "Active" })
+    });
+    assert.equal(duplicate.status, 409);
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+    fs.writeFileSync(testAccountsPath, originalAccounts);
+  }
+});
+
+test("Requester accounts accept a free-text department; Office Admin accounts still require a listed office", async () => {
+  const dbPath = testDbPath;
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const originalAccounts = fs.readFileSync(testAccountsPath, "utf8");
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const login = async (email, password) => {
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    return response.json();
+  };
+
+  try {
+    const { token } = await login("all.offices.admin@ust.edu.ph", "SuperAdmin2026!");
+
+    const facultyCreated = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Faculty", email: "new.faculty@ust.edu.ph", office: "College of Science", role: "Requester", requesterType: "Faculty", status: "Active" })
+    });
+    const facultyBody = await facultyCreated.json();
+    assert.equal(facultyCreated.status, 201, facultyBody.error);
+    assert.equal(facultyBody.user.office, "College of Science");
+
+    const officeAdminRejected = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Bad Admin", email: "bad.admin@ust.edu.ph", office: "College of Science", role: "Office Admin", status: "Active" })
+    });
+    assert.equal(officeAdminRejected.status, 400);
+  } finally {
+    server.close();
+    await once(server, "close");
+    fs.writeFileSync(dbPath, originalDatabase);
+    fs.writeFileSync(testAccountsPath, originalAccounts);
+  }
+});
+

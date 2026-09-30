@@ -58,7 +58,7 @@ Requester submission
 
 ## OSG Visitor Flow
 
-1. OSG Requester submits a visitor access request.
+1. A Requester whose affiliation is Faculty, Staff, or Student Org Rep submits a visitor access request. Student requesters cannot access this flow.
 2. OSG Admin approves or declines it.
 3. Approved visitors may receive a parking bay.
 4. OSG Admin records arrival and the status becomes `Arrived`.
@@ -69,6 +69,9 @@ OSG visitor processing is separate from reservation Event Reviews. Event Reviews
 
 - Users sign in with their own account and cannot select or self-assign a role.
 - Requesters access only their reservations, payments, and notifications plus active reservable resources and workflows.
+- Every Requester account has an affiliation: Student, Faculty, Staff, or Student Org Rep, set by a Super Admin.
+- Student requesters may browse and reserve only Equipment resources, and cannot access visitor requests.
+- Faculty, Staff, and Student Org Rep requesters may reserve Equipment, Facility, and Vehicle resources, and may submit and track their own visitor access requests.
 - Office Admins maintain only resources owned by their office and decide only steps assigned to that office.
 - Payment verification belongs to the resource-owning office, even when a support office completes the final operational step.
 - OSG Admins handle OSG-assigned event reviews and OSG visitor operations; they cannot edit resources, offices, users, or workflows.
@@ -79,10 +82,9 @@ OSG visitor processing is separate from reservation Event Reviews. Event Reviews
 
 | Role | Allowed Screens | Data And Maintenance Scope |
 | --- | --- | --- |
-| Requester | Home, Browse Resources, New Request, My Requests, Calendar, Alerts, Profile | Own requests, receipts, and alerts |
+| Requester | Home, Browse Resources, New Request, My Requests, Calendar, Alerts, Profile, plus New Visitor Request and My Visitor Requests for Faculty/Staff/Student Org Rep affiliations | Own requests, receipts, and alerts; Students are limited to Equipment resources and cannot access visitor requests |
 | Office Admin | Dashboard, Approvals, Payments, Resources, Office Settings, Calendar, Activity, Profile | Assigned approval steps, owned-office payments and resources |
-| Super Admin | Dashboard, Offices, Users & Roles, Approval Workflows, Coverage, Calendar, Activity, Profile | System configuration and reporting |
+| Super Admin | Dashboard, Offices, Users & Roles, Approval Workflows, Coverage, Calendar, Activity, Profile | System configuration, reporting, and requester affiliation assignment |
 | OSG Admin | Dashboard, Visitor Requests, Event Reviews, Parking, Arrivals, Records, Activity, Profile | OSG steps and visitor operations |
-| OSG Requester | Home, New Visitor Request, My Requests, Profile | Own visitor requests |
 
 Local defense mode redirects to a mock UST identity provider. Its login form encrypts the submitted password with an ephemeral RSA-OAEP public key before the request is sent, and the server validates the decrypted value against a salted password hash. It returns a short-lived single-use authorization code, verifies OAuth `state` and PKCE S256 during the token exchange, and creates an expiring local bearer session. RESERVATA receives the authenticated email but never lets the user select a role. Production uses the same browser Authorization Code + PKCE client with University OIDC endpoints; API Gateway validates the JWT before Lambda looks up the email in the Users table for its role, office, and account status.

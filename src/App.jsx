@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { LoadingScreen } from "./components/Common.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
-import { isViewAllowed, NAV_ITEMS } from "./config.js";
+import { isViewAllowed, navItemsFor } from "./config.js";
 import { ReservataStore } from "./store.js";
 import { completeSsoLogin } from "./services/ssoAuth.js";
 import { confirmLeaveForms } from "./shared/formSafety.js";
@@ -53,7 +53,7 @@ export default function App() {
   const navigate = useCallback(
     (view) => {
       if (view !== store.session.activeView && !confirmLeaveForms()) return;
-      if (!isViewAllowed(store.session.activeRole, view)) {
+      if (!isViewAllowed(store.session.activeRole, view, store.currentUser.requesterType)) {
         store.setView(store.currentUser.home);
         refresh();
         showToast("That page is not available for this role.");
@@ -113,7 +113,7 @@ export default function App() {
   }
 
   function showNotifications() {
-    const canOpen = NAV_ITEMS[store.session.activeRole]?.some(
+    const canOpen = navItemsFor(store.session.activeRole, store.currentUser.requesterType).some(
       ([view]) => view === "notifications",
     );
     if (canOpen) navigate("notifications");

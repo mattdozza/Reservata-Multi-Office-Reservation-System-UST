@@ -248,6 +248,7 @@
       "email": "student.body.requester@ust.edu.ph",
       "office": "Student Body",
       "role": "Requester",
+      "requesterType": "Student",
       "status": "Active"
     },
     {
@@ -275,7 +276,8 @@
       "name": "CICS Visitor Requester",
       "email": "cics.visitor.requester@ust.edu.ph",
       "office": "CICS",
-      "role": "OSG Requester",
+      "role": "Requester",
+      "requesterType": "Student Org Rep",
       "status": "Active"
     },
     {
@@ -300,6 +302,14 @@
     { "id": "OFF-FACILITIES", "name": "Facilities Management", "status": "Active" },
     { "id": "OFF-OSG", "name": "OSG", "status": "Active" }
   ],
+  "drivers": [
+    { "id": "DRV-001", "name": "Ramon Cruz", "licenseNumber": "N01-23-456789", "office": "Simbahayan", "phone": "0917-000-0001", "status": "Available" },
+    { "id": "DRV-002", "name": "Teresa Lim", "licenseNumber": "N02-34-567890", "office": "Dominican Residence", "phone": "0917-000-0002", "status": "Available" }
+  ],
+  "approvingBodies": [
+    { "id": "AB-001", "office": "Facilities Management", "bodyName": "Facilities Setup Desk", "description": "Reviews setup and maintenance readiness.", "status": "Active" },
+    { "id": "AB-002", "office": "OSG", "bodyName": "OSG Security Office", "description": "Reviews external visitor and security clearance.", "status": "Active" }
+  ],
   "approvalTemplates": [
     {
       "id": "WF-BASIC",
@@ -317,9 +327,9 @@
       "status": "Active",
       "steps": [
         { "id": "OWNER", "name": "Venue Owner Review", "office": "$OWNER", "sequence": 1, "condition": "always" },
-        { "id": "FACILITIES", "name": "Facilities and Setup Review", "office": "Facilities Management", "sequence": 2, "condition": "setupRequired" },
-        { "id": "OSG", "name": "External Guest and Security Review", "office": "OSG", "sequence": 2, "condition": "externalVisitors" },
-        { "id": "PARKING", "name": "Visitor Parking Review", "office": "OSG", "sequence": 2, "condition": "parkingRequired" }
+        { "id": "FACILITIES", "name": "Facilities and Setup Review", "office": "Facilities Management", "sequence": 2, "condition": "setupRequired", "approvingBodyId": "AB-001" },
+        { "id": "OSG", "name": "External Guest and Security Review", "office": "OSG", "sequence": 2, "condition": "externalVisitors", "approvingBodyId": "AB-002" },
+        { "id": "PARKING", "name": "Visitor Parking Review", "office": "OSG", "sequence": 2, "condition": "parkingRequired", "approvingBodyId": "AB-002" }
       ]
     }
   ],

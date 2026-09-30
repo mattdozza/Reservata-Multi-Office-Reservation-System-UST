@@ -21,7 +21,12 @@ const tables = {
   approvalWorkflows: process.env.APPROVAL_WORKFLOWS_TABLE,
   systemSettings: process.env.SYSTEM_SETTINGS_TABLE,
   notifications: process.env.NOTIFICATIONS_TABLE,
-  activity: process.env.ACTIVITY_TABLE
+  activity: process.env.ACTIVITY_TABLE,
+  drivers: process.env.DRIVERS_TABLE,
+  reservationDrivers: process.env.RESERVATION_DRIVERS_TABLE,
+  approvingBodies: process.env.APPROVING_BODIES_TABLE,
+  approvals: process.env.APPROVALS_TABLE,
+  reservationHistory: process.env.RESERVATION_HISTORY_TABLE
 };
 const missing = Object.entries(tables).filter(([, value]) => !value).map(([key]) => key);
 if (missing.length) throw new Error(`Missing table variables: ${missing.join(", ")}`);
@@ -33,7 +38,6 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOpt
 const timestamp = "2026-08-24T08:00:00.000Z";
 
 const peopleByName = new Map(source.people.map((person) => [person.name, person]));
-peopleByName.get("Paolo Reyes").role = "OSG Requester";
 const reservationById = new Map(source.reservations.map((reservation) => [reservation.id, reservation]));
 
 function emailFor(name) {
@@ -73,6 +77,18 @@ const payments = source.payments.map((item) => {
 const visitors = source.visitors.map((item) => ({ ...item, requesterEmail: emailFor(item.requester), createdAt: timestamp, updatedAt: timestamp }));
 const users = source.people.map((item) => ({ ...item, email: item.email.toLowerCase(), createdAt: timestamp, updatedAt: timestamp }));
 const offices = source.offices.map((item) => ({ ...item, createdAt: timestamp, updatedAt: timestamp }));
+const officeByName = new Map(offices.map((item) => [item.name, item]));
+const drivers = source.drivers.map((item) => ({ ...item, createdAt: timestamp, updatedAt: timestamp }));
+const approvingBodies = source.approvingBodies.map((item) => ({
+  ...item,
+  officeId: officeByName.get(item.office)?.id || "",
+  createdAt: timestamp,
+  updatedAt: timestamp
+}));
+const approvingBodyById = new Map(approvingBodies.map((item) => [item.id, item]));
+function approvingBodyFor(office) {
+  return approvingBodies.find((item) => item.office === office && item.status === "Active") || null;
+}
 const notifications = source.notifications.map((item) => ({ ...item, userEmail: emailFor(item.user), createdAt: timestamp }));
 const activity = source.activity.map((item, index) => {
   const resource = source.resources.find((candidate) => candidate.name === item.target);
@@ -86,6 +102,71 @@ const locks = reservations
     expiresAt: Math.floor(new Date(`${item.date}T23:59:59Z`).getTime() / 1000) + 86400
   })));
 
+const reservationDrivers = reservations
+  .filter((item) => {
+    const resource = resourceById.get(item.resourceId);
+    return resource?.driver === "With Driver" && item.status !== "Rejected";
+  })
+  .map((item, index) => {
+    const resource = resourceById.get(item.resourceId);
+    const driver = drivers.find((candidate) => candidate.office === resource.office);
+    if (!driver) return null;
+    return {
+      id: `RD-SEED-${index + 1}`,
+      reservationId: item.id,
+      driverId: driver.id,
+      driverName: driver.name,
+      vehicleResourceId: resource.id,
+      office: resource.office,
+      status: "Assigned",
+      assignedAt: timestamp,
+      assignedBy: "Seed migration",
+      assignedByEmail: "seed-migration@ust.edu.ph",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+  })
+  .filter(Boolean);
+
+const approvals = reservations.flatMap((item) =>
+  item.approvalSteps
+    .filter((step) => ["Approved", "Rejected"].includes(step.status))
+    .map((step, index) => {
+      const workflow = workflowById.get(item.workflowTemplateId);
+      const templateStep = workflow?.steps?.find((candidate) => candidate.id === step.templateStepId);
+      const approvingBody = (templateStep?.approvingBodyId && approvingBodyById.get(templateStep.approvingBodyId)) || approvingBodyFor(step.office);
+      return {
+        id: `APR-SEED-${item.id}-${index + 1}`,
+        reservationId: item.id,
+        stepId: step.id,
+        templateStepId: step.templateStepId,
+        office: step.office,
+        approvingBodyId: approvingBody?.id || "",
+        approvingBodyName: approvingBody?.bodyName || step.office,
+        approverEmail: "seed-migration@ust.edu.ph",
+        approverName: "Seed migration",
+        decision: step.status,
+        remarks: "",
+        sequence: step.sequence,
+        decidedAt: timestamp,
+        createdAt: timestamp
+      };
+    })
+);
+
+const reservationHistory = reservations.map((item, index) => ({
+  id: `RH-SEED-${index + 1}`,
+  reservationId: item.id,
+  previousStatus: "Created",
+  newStatus: item.status,
+  changedBy: "Seed migration",
+  changedByEmail: "seed-migration@ust.edu.ph",
+  office: item.office,
+  remarks: "",
+  changedAt: timestamp,
+  createdAt: timestamp
+}));
+
 const collections = {
   resources: source.resources.map((item) => ({ ...item, workflowTemplateId: item.workflowTemplateId || "WF-BASIC", createdAt: timestamp, updatedAt: timestamp })),
   reservations,
@@ -97,7 +178,12 @@ const collections = {
   approvalWorkflows: source.approvalTemplates.map((item) => ({ ...item, createdAt: timestamp, updatedAt: timestamp })),
   systemSettings: source.systemSettings.map((item) => ({ ...item, createdAt: timestamp, updatedAt: timestamp })),
   notifications,
-  activity
+  activity,
+  drivers,
+  reservationDrivers,
+  approvingBodies,
+  approvals,
+  reservationHistory
 };
 
 for (const [name, items] of Object.entries(collections)) {

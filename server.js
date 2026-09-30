@@ -8,7 +8,7 @@ const PORT = Number(process.env.PORT || 5178);
 const HOST = process.env.HOST || "127.0.0.1";
 const ROOT = __dirname;
 const DB_PATH = process.env.RESERVATA_DB_PATH || path.join(ROOT, "data", "db.json");
-const ACCOUNTS_PATH = path.join(ROOT, "data", "accounts.json");
+const ACCOUNTS_PATH = process.env.RESERVATA_ACCOUNTS_PATH || path.join(ROOT, "data", "accounts.json");
 const DIST_PATH = path.join(ROOT, "dist");
 const RESOURCE_PHOTOS_PATH = path.join(ROOT, "data", "resource-photos");
 const STATIC_ROOT = fs.existsSync(DIST_PATH) ? DIST_PATH : ROOT;
@@ -54,12 +54,14 @@ const MIME_TYPES = {
 const COMPRESSIBLE_STATIC_TYPES = new Set([".html", ".css", ".js", ".json", ".md", ".svg"]);
 
 const ROLE_MUTATIONS = {
-  Requester: ["reservations", "payments", "notifications", "activity"],
+  Requester: ["reservations", "payments", "visitors", "notifications", "activity"],
   "Office Admin": ["resources", "reservations", "payments", "notifications", "activity"],
   "Super Admin": ["resources", "people", "offices", "approvalTemplates", "systemSettings", "notifications", "activity"],
-  "OSG Admin": ["reservations", "payments", "visitors", "notifications", "activity"],
-  "OSG Requester": ["visitors", "notifications", "activity"]
+  "OSG Admin": ["reservations", "payments", "visitors", "notifications", "activity"]
 };
+
+const REQUESTER_TYPES = new Set(["Student", "Faculty", "Staff", "Student Org Rep"]);
+const VISITOR_CAPABLE_REQUESTER_TYPES = new Set(["Faculty", "Staff", "Student Org Rep"]);
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -121,6 +123,20 @@ function writeDatabase(data) {
 
 function readAccounts() {
   return JSON.parse(fs.readFileSync(ACCOUNTS_PATH, "utf8"));
+}
+
+function writeAccounts(accounts) {
+  fs.writeFileSync(ACCOUNTS_PATH, JSON.stringify(accounts, null, 2));
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const passwordHash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return { salt, passwordHash };
+}
+
+function generateTempPassword() {
+  return `Rsv${crypto.randomBytes(6).toString("base64url")}!`;
 }
 
 function readBody(request) {
@@ -552,6 +568,7 @@ function publicUser(person) {
     email: person.email,
     office: person.office,
     role: person.role,
+    requesterType: person.requesterType || "",
     status: person.status
   };
 }
@@ -895,6 +912,9 @@ function assertScopedMutation(before, after, user, database) {
     if (after.people.some((item) => !ROLE_MUTATIONS[item.role] || !["Active", "Inactive"].includes(item.status))) {
       throw new HttpError(400, "A user has an unsupported role or account status.");
     }
+    if (after.people.some((item) => item.role === "Requester" && !REQUESTER_TYPES.has(item.requesterType))) {
+      throw new HttpError(400, "Requester accounts must specify a valid affiliation.");
+    }
     const assetTags = new Set();
     for (const resource of after.resources) {
       const assetTag = normalizeAssetTag(resource.assetTag);
@@ -953,6 +973,9 @@ function assertScopedMutation(before, after, user, database) {
       if (reservation.requester !== user.name || reservation.status !== "Under Owner Review") {
         throw new HttpError(403, "Requesters may only submit new pending reservations for their own account.");
       }
+      if (user.requesterType === "Student" && full.resources.find((item) => item.id === reservation.resourceId)?.type !== "Equipment") {
+        throw new HttpError(403, "Student accounts may only reserve Equipment resources.");
+      }
       assertReservationLeadTime(reservation);
       if (reservationConflicts(full, reservation.resourceId, reservation.date, reservation.start, reservation.end, reservation.id).length) {
         throw new HttpError(409, "That resource already has an overlapping reservation request.");
@@ -977,10 +1000,9 @@ function assertScopedMutation(before, after, user, database) {
     }
   }
 
-  if (user.role === "OSG Requester") {
-    if (changedVisitors.some((item) => item.requester !== user.name || item.status !== "Pending")) {
-      throw new HttpError(403, "OSG Requesters may only submit pending visitor requests for their own account.");
-    }
+  const canManageOwnVisitors = user.role === "Requester" && VISITOR_CAPABLE_REQUESTER_TYPES.has(user.requesterType);
+  if (canManageOwnVisitors && changedVisitors.some((item) => item.requester !== user.name || item.status !== "Pending")) {
+    throw new HttpError(403, "Requesters may only submit pending visitor requests for their own account.");
   }
 
   if (user.role === "OSG Admin" && changedReservations.some((item) => !item.approvalSteps?.some((step) => step.office === "OSG"))) {
@@ -998,7 +1020,7 @@ function assertScopedMutation(before, after, user, database) {
     throw new HttpError(403, "OSG may only trigger a new awaiting-receipt record after its final required approval.");
   }
 
-  if (!["OSG Admin", "OSG Requester"].includes(user.role) && changedVisitors.length) {
+  if (!(user.role === "OSG Admin" || canManageOwnVisitors) && changedVisitors.length) {
     throw new HttpError(403, `${user.role} cannot modify visitor records.`);
   }
   if (user.role !== "Office Admin" && changedResources.length) {
@@ -1009,9 +1031,6 @@ function assertScopedMutation(before, after, user, database) {
   }
   if (user.role === "Requester" && changedNotifications.some((item) => !requesterNotificationTargets.has(item.user))) {
     throw new HttpError(403, "Users may only update their own notifications or the office assigned to a new reservation.");
-  }
-  if (user.role === "OSG Requester" && changedNotifications.some((item) => item.user !== user.name)) {
-    throw new HttpError(403, "Users may only update their own notifications.");
   }
 }
 
@@ -1033,15 +1052,16 @@ function scopePredicates(database, user) {
     ...database.payments.filter((item) => paymentOffice(item) === user.office).map((item) => item.reservationId)
   ]);
   const visitorTargets = new Set(database.visitors.map((item) => item.visitor));
+  const canSeeOwnVisitors = user.role === "Requester" && VISITOR_CAPABLE_REQUESTER_TYPES.has(user.requesterType);
 
   function notificationVisible(item) {
-    if (["Requester", "OSG Requester"].includes(user.role)) return item.user === user.name;
+    if (user.role === "Requester") return item.user === user.name;
     return item.user === user.name || item.office === user.office || item.user === user.office;
   }
 
   return {
     resources: (item) => user.role === "Requester"
-      ? item.type !== "Visitor Service" && item.status !== "Archived"
+      ? item.type !== "Visitor Service" && item.status !== "Archived" && (user.requesterType !== "Student" || item.type === "Equipment")
       : user.role === "Office Admin" && item.office === user.office,
     reservations: (item) => user.role === "Requester"
       ? item.requester === user.name
@@ -1053,7 +1073,7 @@ function scopePredicates(database, user) {
       : user.role === "Office Admin"
         ? paymentOffice(item) === user.office
         : user.role === "OSG Admin" && reservationIds.has(item.reservationId),
-    visitors: (item) => user.role === "OSG Admin" || (user.role === "OSG Requester" && item.requester === user.name),
+    visitors: (item) => user.role === "OSG Admin" || (canSeeOwnVisitors && item.requester === user.name),
     people: (item) => normalizeEmail(item.email) === normalizeEmail(user.email),
     offices: (item) => user.role === "Office Admin" && item.status === "Active",
     approvalTemplates: (item) => ["Requester", "Office Admin"].includes(user.role) && item.status === "Active",
@@ -1061,7 +1081,7 @@ function scopePredicates(database, user) {
     notifications: notificationVisible,
     activity: (item) => {
       if (item.reservationId) return reservationIds.has(item.reservationId);
-      if (["Requester", "OSG Requester"].includes(user.role)) return item.actor === user.name;
+      if (user.role === "Requester") return item.actor === user.name;
       if (user.role === "Office Admin") return item.actor === user.name || officeTargets.has(item.target);
       if (user.role === "OSG Admin") return item.actor === user.name || visitorTargets.has(item.target);
       return false;
@@ -1114,6 +1134,7 @@ async function handleAuth(request, response, pathname) {
     sendJson(response, 200, { ok: true });
     return true;
   }
+
   return false;
 }
 
@@ -1126,6 +1147,54 @@ async function handleApi(request, response, url) {
   if (await handleAuth(request, response, pathname)) return;
 
   const user = authenticatedUser(request);
+
+  if (pathname === "/api/users" && request.method === "POST") {
+    if (user.role !== "Super Admin") throw new HttpError(403, "Only a Super Admin can provision accounts.");
+    const body = await readBody(request);
+    const name = String(body.name || "").trim();
+    const email = normalizeEmail(body.email);
+    const office = String(body.office || "").trim();
+    const role = body.role;
+    const status = body.status || "Active";
+    if (!name || !email || !office) throw new HttpError(400, "User name, email, and office are required.");
+    if (!email.endsWith("@ust.edu.ph")) throw new HttpError(400, "Use a valid UST SSO email ending in @ust.edu.ph.");
+    if (!ROLE_MUTATIONS[role]) throw new HttpError(400, "Unsupported role.");
+    if (!["Active", "Inactive"].includes(status)) throw new HttpError(400, "Unsupported account status.");
+    if (role === "Super Admin" && office !== "All Offices") throw new HttpError(400, "Super Admin accounts must use All Offices.");
+    if (role === "Office Admin" && office === "All Offices") throw new HttpError(400, "Office Admin accounts must be assigned to a specific office.");
+    if (role === "OSG Admin" && office !== "OSG") throw new HttpError(400, "OSG Admin accounts must be assigned to OSG.");
+    const requesterType = role === "Requester" ? String(body.requesterType || "") : "";
+    if (role === "Requester" && !REQUESTER_TYPES.has(requesterType)) {
+      throw new HttpError(400, "Requester accounts must specify a valid affiliation.");
+    }
+    const database = readDatabase();
+    const validOffice = role === "Requester" || office === "All Offices" || database.offices.some((item) => item.name === office && item.status === "Active");
+    if (!validOffice) throw new HttpError(400, "Assign the user to an active office.");
+    if (database.people.some((item) => normalizeEmail(item.email) === email)) {
+      throw new HttpError(409, "That SSO email already has a RESERVATA account.");
+    }
+    const accounts = readAccounts();
+    if (accounts.some((item) => normalizeEmail(item.email) === email)) {
+      throw new HttpError(409, "That SSO email already has local login credentials.");
+    }
+    const person = { name, email, office, role, requesterType, status };
+    database.people.push(person);
+    database.activity.unshift({
+      id: createRecordId("ACT"),
+      action: "User account created",
+      actor: user.name,
+      target: name,
+      details: email,
+      time: nowIso()
+    });
+    writeDatabase(database);
+    const tempPassword = generateTempPassword();
+    accounts.push({ email, ...hashPassword(tempPassword) });
+    writeAccounts(accounts);
+    sendJson(response, 201, { user: publicUser(person), tempPassword });
+    return;
+  }
+
   if (pathname === "/api/resource-photos" && request.method === "POST") {
     if (user.role !== "Office Admin") throw new HttpError(403, "Only office admins can upload resource photos.");
     const { data } = await readBody(request);

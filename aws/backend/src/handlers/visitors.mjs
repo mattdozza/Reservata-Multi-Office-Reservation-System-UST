@@ -1,11 +1,20 @@
-import { authenticatedUser, requireRole, ROLES } from "../lib/auth.mjs";
+import { authenticatedUser, requireRole, ROLES, VISITOR_CAPABLE_REQUESTER_TYPES } from "../lib/auth.mjs";
 import { HttpError, json, method, parseBody, requireFields, wrap } from "../lib/http.mjs";
 import { repository } from "../lib/repository.mjs";
 import { activityRecord, createId, newestFirst, now } from "../lib/records.mjs";
 import { TABLES } from "../lib/tables.mjs";
 
+function requireVisitorCapableRequester(user) {
+  if (user.role !== ROLES.requester || !VISITOR_CAPABLE_REQUESTER_TYPES.has(user.requesterType)) {
+    throw new HttpError(403, "Your account cannot access visitor requests.");
+  }
+}
+
 async function listVisitors(repo, user) {
-  if (user.role === ROLES.osgRequester) return repo.query(TABLES.visitors, "requester-index", "requesterEmail", user.email);
+  if (user.role === ROLES.requester) {
+    requireVisitorCapableRequester(user);
+    return repo.query(TABLES.visitors, "requester-index", "requesterEmail", user.email);
+  }
   if ([ROLES.osgAdmin, ROLES.superAdmin].includes(user.role)) return repo.scan(TABLES.visitors);
   throw new HttpError(403, "Your role cannot access visitor requests.");
 }
@@ -26,7 +35,8 @@ export function createHandler(repo = repository) {
     if (requestMethod === "GET") return json(200, { items: newestFirst(await listVisitors(repo, user)) });
 
     if (requestMethod === "POST") {
-      requireRole(user, ROLES.osgRequester);
+      requireRole(user, ROLES.requester);
+      requireVisitorCapableRequester(user);
       const body = parseBody(event);
       requireFields(body, ["visitor", "organization", "purpose", "date", "time", "guests"]);
       const createdAt = now();

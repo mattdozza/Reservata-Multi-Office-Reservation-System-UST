@@ -37,13 +37,15 @@ These credentials exist only in the local mock identity provider. Before submiss
 
 | Role | Email | Local password |
 | --- | --- | --- |
-| Requester | `student.body.requester@ust.edu.ph` | `Requester2026!` |
+| Requester (Student) | `student.body.requester@ust.edu.ph` | `Requester2026!` |
 | Office Admin | `simbahayan.admin@ust.edu.ph` | `OfficeAdmin2026!` |
 | EdTech Office Admin | `edtech.admin@ust.edu.ph` | `EdTech2026!` |
 | Facilities Office Admin | `facilities.admin@ust.edu.ph` | `Facilities2026!` |
 | Super Admin | `all.offices.admin@ust.edu.ph` | `SuperAdmin2026!` |
 | OSG Admin | `osg.admin@ust.edu.ph` | `OsgAdmin2026!` |
-| OSG Requester | `cics.visitor.requester@ust.edu.ph` | `Visitor2026!` |
+| Requester (Student Org Rep) | `cics.visitor.requester@ust.edu.ph` | `Visitor2026!` |
+
+Requester accounts carry an affiliation (Student, Faculty, Staff, or Student Org Rep). Students may only browse and reserve Equipment resources and cannot access visitor requests; Faculty, Staff, and Student Org Rep requesters have full resource access plus the ability to submit and track visitor access requests.
 
 ## Available Commands
 
@@ -57,11 +59,10 @@ npm run aws:test # AWS backend authorization and booking-lock tests
 
 ## Demonstration Roles
 
-- Requester: browse resources, submit reservations, track requests, and upload receipt simulations
+- Requester: browse resources, submit reservations, track requests, and upload receipt simulations. Student requesters are limited to Equipment resources; Faculty, Staff, and Student Org Rep requesters can also submit and track visitor access requests
 - Office Admin: decide assigned approval steps, verify owned-office payments, and add, edit, archive, or restore office resources
-- Super Admin: maintain offices, account roles and access, reusable approval workflows, coverage, and audit records
+- Super Admin: maintain offices, account roles, access, and requester affiliations, reusable approval workflows, coverage, and audit records
 - OSG Admin: decide assigned event/security steps, approve visitor requests, allocate parking, and record arrivals
-- OSG Requester: submit visitor access requests and track their status
 
 ## Additional Requirements
 

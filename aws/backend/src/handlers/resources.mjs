@@ -74,6 +74,61 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
     const user = await authenticatedUser(event, repo);
     const requestMethod = method(event);
     const rawPath = event.rawPath || event.path || "";
+
+    if (rawPath === "/drivers" && requestMethod === "GET") {
+      requireRole(user, ROLES.officeAdmin, ROLES.superAdmin);
+      const items = user.role === ROLES.superAdmin
+        ? await repo.scan(TABLES.drivers)
+        : await repo.query(TABLES.drivers, "office-index", "office", user.office);
+      return json(200, { items });
+    }
+
+    if (rawPath === "/drivers" && requestMethod === "POST") {
+      requireRole(user, ROLES.officeAdmin);
+      const body = parseBody(event);
+      requireFields(body, ["name", "licenseNumber"]);
+      const createdAt = now();
+      const driver = {
+        id: createId("DRV"),
+        name: String(body.name).trim(),
+        licenseNumber: String(body.licenseNumber).trim(),
+        userEmail: String(body.userEmail || "").trim().toLowerCase(),
+        office: user.office,
+        phone: String(body.phone || "").trim(),
+        status: "Available",
+        createdAt,
+        updatedAt: createdAt
+      };
+      await repo.transact([
+        { Put: { TableName: TABLES.drivers, Item: driver, ConditionExpression: "attribute_not_exists(id)" } },
+        { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Driver created", driver.name) } }
+      ]);
+      return json(201, driver);
+    }
+
+    if (rawPath.startsWith("/drivers/") && requestMethod === "PATCH") {
+      requireRole(user, ROLES.officeAdmin);
+      const driver = await repo.get(TABLES.drivers, { id: event.pathParameters?.id });
+      if (!driver) throw new HttpError(404, "Driver not found.");
+      if (driver.office !== user.office) throw new HttpError(403, "Only the owning office can edit this driver.");
+      const body = parseBody(event);
+      if (body.status && !["Available", "Unavailable"].includes(body.status)) throw new HttpError(400, "Unsupported driver status.");
+      const changes = {
+        name: body.name === undefined ? undefined : String(body.name).trim(),
+        licenseNumber: body.licenseNumber === undefined ? undefined : String(body.licenseNumber).trim(),
+        userEmail: body.userEmail === undefined ? undefined : String(body.userEmail).trim().toLowerCase(),
+        phone: body.phone === undefined ? undefined : String(body.phone).trim(),
+        status: body.status,
+        updatedAt: now()
+      };
+      const updated = await repo.update(TABLES.drivers, { id: driver.id }, changes, {
+        ConditionExpression: "office = :office",
+        ExpressionAttributeValues: { ":office": user.office }
+      });
+      await repo.put(TABLES.activity, activityRecord(user, "Driver updated", updated.name));
+      return json(200, updated);
+    }
+
     if (rawPath === "/resource-photos" && requestMethod === "POST") {
       requireRole(user, ROLES.officeAdmin);
       return json(201, await savePhoto(s3, user, parseBody(event).data));
@@ -92,7 +147,9 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       if (user.role === ROLES.officeAdmin) items = await repo.query(TABLES.resources, "office-index", "office", user.office);
       else if ([ROLES.requester, ROLES.superAdmin].includes(user.role)) {
         items = await repo.scan(TABLES.resources);
-        if (user.role === ROLES.requester) items = items.filter((item) => item.status !== "Archived" && item.type !== "Visitor Service");
+        if (user.role === ROLES.requester) {
+          items = items.filter((item) => item.status !== "Archived" && item.type !== "Visitor Service" && (user.requesterType !== "Student" || item.type === "Equipment"));
+        }
       }
       else items = await repo.query(TABLES.resources, "office-index", "office", "OSG");
       return json(200, { items });

@@ -7,9 +7,11 @@ export const ROLE_IDS = {
   Requester: "requester",
   "Office Admin": "officeAdmin",
   "Super Admin": "superAdmin",
-  "OSG Admin": "osgAdmin",
-  "OSG Requester": "osgRequester"
+  "OSG Admin": "osgAdmin"
 };
+
+export const REQUESTER_TYPES = ["Student", "Faculty", "Staff", "Student Org Rep"];
+export const VISITOR_CAPABLE_REQUESTER_TYPES = ["Faculty", "Staff", "Student Org Rep"];
 
 export const USERS = {
   requester: {
@@ -19,7 +21,8 @@ export const USERS = {
     office: "Student Body",
     email: "student.body.requester@ust.edu.ph",
     portal: "Requester Portal",
-    home: "dashboard"
+    home: "dashboard",
+    requesterType: "Student"
   },
   officeAdmin: {
     name: "Simbahayan Office Admin",
@@ -47,17 +50,10 @@ export const USERS = {
     email: "osg.admin@ust.edu.ph",
     portal: "OSG Admin Portal",
     home: "dashboard"
-  },
-  osgRequester: {
-    name: "CICS Visitor Requester",
-    initials: "PR",
-    roleLabel: "OSG Requester",
-    office: "CICS",
-    email: "cics.visitor.requester@ust.edu.ph",
-    portal: "OSG Requester Portal",
-    home: "dashboard"
   }
 };
+
+const REQUESTER_VISITOR_VIEWS = new Set(["newVisitor"]);
 
 export const NAV_ITEMS = {
   requester: [
@@ -65,6 +61,7 @@ export const NAV_ITEMS = {
     ["resources", "Browse Resources"],
     ["newRequest", "New Request"],
     ["myRequests", "My Requests"],
+    ["newVisitor", "New Visitor Request"],
     ["calendar", "Calendar"],
     ["notifications", "Alerts"],
     ["profile", "Profile"]
@@ -101,21 +98,19 @@ export const NAV_ITEMS = {
     ["notifications", "Alerts"],
     ["activity", "Activity"],
     ["profile", "Profile"]
-  ],
-  osgRequester: [
-    ["dashboard", "Home"],
-    ["newVisitor", "New Visitor Request"],
-    ["myVisitorRequests", "My Requests"],
-    ["profile", "Profile"]
   ]
 };
 
-export const ROLE_ACCESS = Object.fromEntries(
-  Object.entries(NAV_ITEMS).map(([role, items]) => [role, items.map(([view]) => view)])
-);
+export function navItemsFor(role, requesterType) {
+  const items = NAV_ITEMS[role] || [];
+  if (role !== "requester" || requesterType === "Student") {
+    return items.filter(([view]) => !REQUESTER_VISITOR_VIEWS.has(view));
+  }
+  return items;
+}
 
-export function isViewAllowed(role, view) {
-  return Boolean(role && ROLE_ACCESS[role]?.includes(view));
+export function isViewAllowed(role, view, requesterType) {
+  return navItemsFor(role, requesterType).some(([item]) => item === view);
 }
 
 export const PAGE_TITLES = {
@@ -137,7 +132,6 @@ export const PAGE_TITLES = {
   parking: ["Parking Allocation", "RESERVATA / OSG / Parking"],
   arrivals: ["Arrival Monitor", "RESERVATA / OSG / Arrivals"],
   visitorRecords: ["Visitor Records", "RESERVATA / OSG / Records"],
-  newVisitor: ["New Visitor Access Request", "RESERVATA / OSG Requester / New Request"],
-  myVisitorRequests: ["My Visitor Requests", "RESERVATA / OSG Requester / My Requests"],
+  newVisitor: ["New Visitor Access Request", "RESERVATA / Requester / New Visitor Request"],
   profile: ["Profile", "RESERVATA / Account"]
 };

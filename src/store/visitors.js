@@ -1,10 +1,14 @@
+import { VISITOR_CAPABLE_REQUESTER_TYPES } from "../config.js";
 import { awsApi } from "../services/awsApi.js";
 import { nextId } from "../shared/utils.js";
 import { cleanText, requireFutureDate, requireText, validPositiveNumber } from "./shared.js";
 
 export const visitorMethods = {
   async submitVisitor(values) {
-    this.requireRole("osgRequester");
+    this.requireRole("requester");
+    if (!VISITOR_CAPABLE_REQUESTER_TYPES.includes(this.currentUser.requesterType)) {
+      throw new Error("Only Faculty, Staff, or Student Org Rep accounts can submit visitor requests.");
+    }
     const visitorName = requireText(values.visitor, "Visitor / group name", 3);
     const organization = requireText(values.organization, "Organization", 2);
     const visitDate = requireFutureDate(values.visitDate, "Visit date");

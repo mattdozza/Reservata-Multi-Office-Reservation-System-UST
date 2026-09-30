@@ -1,4 +1,4 @@
-import { activityRecord, notificationRecord, now } from "./records.mjs";
+import { activityRecord, notificationRecord, now, reservationHistoryRecord } from "./records.mjs";
 import { reservationSlots } from "./slots.mjs";
 import { TABLES } from "./tables.mjs";
 
@@ -98,6 +98,7 @@ export async function expireReservations(repo, reservations, payments = [], reso
         } },
         { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.requesterEmail, reservation.requester, `${reservation.resourceName} was completed after its scheduled use.`) } },
         { Put: { TableName: TABLES.activity, Item: activityRecord(systemUser, "Reservation completed", reservation.resourceName, reservation.office) } },
+        { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(systemUser, reservation, previousStatus, "Completed") } },
         ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
           Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
         }))
@@ -186,6 +187,7 @@ export async function expireReservations(repo, reservations, payments = [], reso
           `${reservation.resourceName}: ${reservation.requester}'s request expired before final confirmation.`
         ) } },
         { Put: { TableName: TABLES.activity, Item: activityRecord(systemUser, "Reservation expired", reservation.resourceName, reservation.office) } },
+        { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(systemUser, reservation, previousStatus, "Expired", reason) } },
         ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
           Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
         }))

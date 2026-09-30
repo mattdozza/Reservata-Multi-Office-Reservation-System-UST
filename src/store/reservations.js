@@ -309,6 +309,9 @@ export const reservationMethods = {
     const resource = this.data.resources.find((item) => item.id === values.resourceId);
     if (!resource) throw new Error("Selected resource was not found.");
     if (resource.status !== "Available") throw new Error("Only available resources can be reserved.");
+    if (this.currentUser.requesterType === "Student" && resource.type !== "Equipment") {
+      throw new Error("Student accounts may only reserve Equipment resources.");
+    }
     const date = requireReservationLeadDate(values.date);
     const start = cleanText(values.start);
     const end = cleanText(values.end);
@@ -510,5 +513,58 @@ export const reservationMethods = {
     this.addNotification(reservation.requester, `${reservation.resourceName} status changed to ${status}${cleanReason ? `. Reason: ${cleanReason}` : "."}`, "Reservation");
     this.addActivity(`Reservation marked ${status}`, this.currentUser.name, reservation.resourceName, cleanReason, reservation.id);
     await this.save(() => awsApi.updateReservationStatus(id, status, cleanReason), previousData);
+  },
+
+  reservationDriver(reservationId) {
+    return this.data.reservationDrivers.find((item) => item.reservationId === reservationId && item.status === "Assigned") || null;
+  },
+
+  availableDriversForOffice(office) {
+    return this.data.drivers.filter((item) => item.office === office && item.status === "Available");
+  },
+
+  async assignDriver(reservationId, driverId) {
+    this.requireRole("officeAdmin", "superAdmin");
+    const reservation = this.data.reservations.find((item) => item.id === reservationId);
+    if (!reservation) return;
+    if (this.session.activeRole === "officeAdmin") this.requireOfficeRecord(reservation);
+    const resource = this.data.resources.find((item) => item.id === reservation.resourceId);
+    if (!resource || resource.type !== "Vehicle" || resource.driver !== "With Driver") {
+      throw new Error("This reservation does not require a driver.");
+    }
+    const driver = this.data.drivers.find((item) => item.id === driverId);
+    if (!driver) throw new Error("Driver not found.");
+    if (driver.status !== "Available") throw new Error("This driver is not available.");
+    const previousData = this.snapshot();
+    this.data.reservationDrivers = this.data.reservationDrivers.filter((item) => !(item.reservationId === reservationId && item.status === "Assigned"));
+    this.data.reservationDrivers.unshift({
+      id: `RD-${Date.now()}`,
+      reservationId,
+      driverId: driver.id,
+      driverName: driver.name,
+      vehicleResourceId: resource.id,
+      office: reservation.office,
+      status: "Assigned",
+      assignedAt: nowLabel(),
+      assignedBy: this.currentUser.name
+    });
+    this.addActivity("Driver assigned", this.currentUser.name, `${reservation.resourceName}: ${driver.name}`, "", reservationId);
+    await this.save(() => awsApi.assignDriver(reservationId, driverId), previousData);
+  },
+
+  async unassignDriver(reservationId) {
+    this.requireRole("officeAdmin", "superAdmin");
+    const reservation = this.data.reservations.find((item) => item.id === reservationId);
+    if (!reservation) return;
+    if (this.session.activeRole === "officeAdmin") this.requireOfficeRecord(reservation);
+    const previousData = this.snapshot();
+    const assignment = this.data.reservationDrivers.find((item) => item.reservationId === reservationId && item.status === "Assigned");
+    if (assignment) {
+      assignment.status = "Unassigned";
+      assignment.unassignedAt = nowLabel();
+      assignment.unassignedBy = this.currentUser.name;
+      this.addActivity("Driver unassigned", this.currentUser.name, `${reservation.resourceName}: ${assignment.driverName}`, "", reservationId);
+    }
+    await this.save(() => awsApi.unassignDriver(reservationId), previousData);
   }
 };

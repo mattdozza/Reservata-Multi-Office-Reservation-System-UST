@@ -4,7 +4,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { authenticatedUser, requireOffice, requireRole, ROLES } from "../lib/auth.mjs";
 import { HttpError, json, method, parseBody, requireFields, wrap } from "../lib/http.mjs";
 import { repository } from "../lib/repository.mjs";
-import { activityRecord, newestFirst, notificationRecord, now } from "../lib/records.mjs";
+import { activityRecord, newestFirst, notificationRecord, now, reservationHistoryRecord } from "../lib/records.mjs";
 import { expireReservations } from "../lib/reservationLifecycle.mjs";
 import { reservationSlots } from "../lib/slots.mjs";
 import { TABLES } from "../lib/tables.mjs";
@@ -127,7 +127,8 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
           ExpressionAttributeValues: { ":next": reservationStatus, ":updatedAt": updatedAt, ":forPayment": "For Payment" }
         } },
         { Put: { TableName: TABLES.activity, Item: activity } },
-        { Put: { TableName: TABLES.notifications, Item: notification } }
+        { Put: { TableName: TABLES.notifications, Item: notification } },
+        { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(user, reservation, "For Payment", reservationStatus, body.reason || "") } }
       ];
       if (!body.verified) {
         transaction.push(...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({

@@ -8,7 +8,7 @@ export const notificationMethods = {
 
   canSeeNotification(notification) {
     if (this.session.activeRole === "superAdmin") return true;
-    if (["requester", "osgRequester"].includes(this.session.activeRole)) return notification.user === this.currentUser.name;
+    if (this.session.activeRole === "requester") return notification.user === this.currentUser.name;
     return notification.user === this.currentUser.name || notification.office === this.officeScope || notification.user === this.officeScope;
   },
 
@@ -23,7 +23,7 @@ export const notificationMethods = {
   },
 
   async markNotificationsRead() {
-    this.requireRole("requester", "officeAdmin", "superAdmin", "osgAdmin", "osgRequester");
+    this.requireRole("requester", "officeAdmin", "superAdmin", "osgAdmin");
     const previousData = this.snapshot();
     this.visibleNotifications.forEach((notification) => {
       notification.unread = false;
@@ -42,7 +42,7 @@ export const notificationMethods = {
   },
 
   async markNotificationRead(id) {
-    this.requireRole("requester", "officeAdmin", "superAdmin", "osgAdmin", "osgRequester");
+    this.requireRole("requester", "officeAdmin", "superAdmin", "osgAdmin");
     const notification = this.visibleNotifications.find((item) => item.id === id);
     if (!notification || !notification.unread) return;
     const previousData = this.snapshot();

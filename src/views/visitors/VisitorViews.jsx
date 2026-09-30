@@ -263,7 +263,7 @@ export function NewVisitorView({ store, onAction, onNavigate }) {
   async function submit(event) {
     event.preventDefault();
     const saved = await onAction(() => store.submitVisitor(formValues(event.currentTarget)), "Visitor access request submitted to OSG.");
-    if (saved) onNavigate("myVisitorRequests");
+    if (saved) onNavigate("myRequests");
   }
 
   return (
@@ -283,39 +283,3 @@ export function NewVisitorView({ store, onAction, onNavigate }) {
   );
 }
 
-export function MyVisitorRequestsView({ store }) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("All");
-  const mine = store.data.visitors.filter((item) => item.requester === store.currentUser.name);
-  const items = mine.filter((item) => {
-    const normalized = query.trim().toLowerCase();
-    const matchesQuery = `${item.visitor} ${item.organization} ${item.purpose} ${item.status}`.toLowerCase().includes(normalized);
-    const matchesStatus = status === "All" || item.status === status;
-    return matchesQuery && matchesStatus;
-  });
-  const statusOptions = ["All", ...new Set(mine.map((item) => item.status))];
-  return (
-    <article className="card">
-      <CardHeader
-        title="Visitor access requests"
-        subtitle="Your OSG submissions"
-        action={<button className="secondary-button" onClick={() => downloadCsv("reservata-my-visitor-requests.csv", items.map((item) => ({
-          id: item.id,
-          visitor: item.visitor,
-          organization: item.organization,
-          date: item.date,
-          time: item.time,
-          status: item.status,
-          reason: item.rejectionReason || ""
-        })))} disabled={!items.length} type="button">Export CSV</button>}
-      />
-      <div className="toolbar list-toolbar">
-        <input className="input resource-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search my visitor requests" aria-label="Search my visitor requests" />
-        <select className="select status-filter" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter visitor request status">
-          {statusOptions.map((item) => <option key={item}>{item}</option>)}
-        </select>
-      </div>
-      <VisitorRows items={items} />
-    </article>
-  );
-}

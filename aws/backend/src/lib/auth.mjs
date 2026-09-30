@@ -5,9 +5,11 @@ export const ROLES = {
   requester: "Requester",
   officeAdmin: "Office Admin",
   superAdmin: "Super Admin",
-  osgAdmin: "OSG Admin",
-  osgRequester: "OSG Requester"
+  osgAdmin: "OSG Admin"
 };
+
+export const REQUESTER_TYPES = new Set(["Student", "Faculty", "Staff", "Student Org Rep"]);
+export const VISITOR_CAPABLE_REQUESTER_TYPES = new Set(["Faculty", "Staff", "Student Org Rep"]);
 
 function claimsFrom(event) {
   return event.requestContext?.authorizer?.jwt?.claims || event.requestContext?.authorizer?.claims || {};

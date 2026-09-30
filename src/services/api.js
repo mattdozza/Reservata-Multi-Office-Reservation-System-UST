@@ -89,6 +89,10 @@ export async function markLocalNotificationsRead(id = null) {
   return parseResponse(response);
 }
 
+export async function createLocalUserAccount(person) {
+  return parseResponse(await authenticatedFetch("/api/users", { method: "POST", body: JSON.stringify(person) }));
+}
+
 export async function resetDatabase(apiAvailable) {
   localStorage.removeItem(STORAGE_KEYS.offlineData);
   if (!apiAvailable) return clone(DEFAULT_DATA);

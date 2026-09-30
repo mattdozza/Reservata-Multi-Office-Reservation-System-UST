@@ -6,8 +6,10 @@ import { reservationErrors } from "../../domain/reservations/validation.js";
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { ApprovalTrail, Badge, CardHeader, ConfirmModal, DetailGrid, DetailModal, EmptyState, ReceiptPreview, ReservationRows } from "../../components/Common.jsx";
+import { VISITOR_CAPABLE_REQUESTER_TYPES } from "../../config.js";
 import { compareDateTime, displayTimestamp, downloadCsv, formatDate, sortBy, todayIso, tomorrowIso } from "../../shared/utils.js";
 import { buildApprovalSteps, pendingApprovalSteps } from "../../domain/workflows.js";
+import { VisitorRows } from "../visitors/VisitorViews.jsx";
 export { ResourcesView } from "./ResourcesView.jsx";
 
 function formValues(form) {
@@ -35,8 +37,9 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
   const [purpose, setPurpose] = useState(restored?.purpose || "");
   const [showErrors, setShowErrors] = useState(false);
   const [draftVersion, setDraftVersion] = useState(0);
+  const allowedTypes = store.currentUser.requesterType === "Student" ? ["Equipment"] : ["Equipment", "Facility", "Vehicle"];
   const available = store.data.resources.filter(
-    (item) => item.status === "Available" && ["Equipment", "Facility", "Vehicle"].includes(item.type)
+    (item) => item.status === "Available" && allowedTypes.includes(item.type)
   );
   const [resourceId, setResourceId] = useState(selectedResourceId || restored?.resourceId || available[0]?.id || "");
   const [slot, setSlot] = useState(selectedSchedule ? { ...selectedSchedule, quantity: restored?.slot.quantity || "1" } : restored?.slot || { date: tomorrowIso(), start: "08:00", end: "09:00", quantity: "1" });
@@ -238,23 +241,39 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
 export function ReservationsView({ store, onAction }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
+  const [type, setType] = useState("All");
   const upload = (id, file) => onAction(() => store.uploadReceipt(id, file), "Receipt uploaded for verification.");
   const uploadDocument = (id, file) => onAction(() => store.uploadSupportingDocument(id, file), "Supporting document uploaded.");
   const cancel = (id, reason) => onAction(() => store.cancelReservation(id, reason), "Reservation cancelled.");
   const reschedule = (id, slot) => onAction(() => store.rescheduleReservation(id, slot), "Reservation reschedule submitted for approval.");
-  const items = store.myReservations().filter((item) => {
-    const normalized = query.trim().toLowerCase();
+  const isVisitorCapable = VISITOR_CAPABLE_REQUESTER_TYPES.includes(store.currentUser.requesterType);
+  const normalized = query.trim().toLowerCase();
+
+  const reservations = store.myReservations();
+  const reservationTypes = [...new Set(reservations.map((item) => item.type))];
+  const typeOptions = ["All", ...reservationTypes, ...(isVisitorCapable ? ["Visitor"] : [])];
+
+  const items = type === "Visitor" ? [] : reservations.filter((item) => {
     const matchesQuery = `${item.resourceName} ${item.office} ${item.purpose} ${item.status}`.toLowerCase().includes(normalized);
     const matchesStatus = status === "All" || item.status === status;
-    return matchesQuery && matchesStatus;
+    const matchesType = type === "All" || item.type === type;
+    return matchesQuery && matchesStatus && matchesType;
   });
-  const statusOptions = ["All", ...new Set(store.myReservations().map((item) => item.status))];
+
+  const myVisitorRequests = isVisitorCapable ? store.data.visitors.filter((item) => item.requester === store.currentUser.name) : [];
+  const visitorItems = (type === "All" || type === "Visitor") ? myVisitorRequests.filter((item) => {
+    const matchesQuery = `${item.visitor} ${item.organization} ${item.purpose} ${item.status}`.toLowerCase().includes(normalized);
+    const matchesStatus = status === "All" || item.status === status;
+    return matchesQuery && matchesStatus;
+  }) : [];
+
+  const statusOptions = ["All", ...new Set([...reservations.map((item) => item.status), ...myVisitorRequests.map((item) => item.status)])];
 
   return (
     <article className="card">
       <CardHeader
-        title="Reservation requests"
-        subtitle="Status, payment, and approval tracking"
+        title="My Requests"
+        subtitle="Reservations and visitor access requests"
         action={<button className="secondary-button" onClick={() => downloadCsv("reservata-my-requests.csv", items.map((item) => ({
           id: item.id,
           resource: item.resourceName,
@@ -272,17 +291,24 @@ export function ReservationsView({ store, onAction }) {
         />
       )}
       <div className="toolbar list-toolbar">
-        <input className="input resource-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search requests" aria-label="Search reservation requests" />
+        <input className="input resource-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search requests" aria-label="Search requests" />
+        {typeOptions.length > 2 && (
+          <select className="select status-filter" value={type} onChange={(event) => setType(event.target.value)} aria-label="Filter by request type">
+            {typeOptions.map((item) => <option key={item}>{item}</option>)}
+          </select>
+        )}
         <select className="select status-filter" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter request status">
           {statusOptions.map((item) => <option key={item}>{item}</option>)}
         </select>
       </div>
-      <ReservationRows store={store} items={items} onUpload={upload} onDocumentUpload={uploadDocument} onCancel={cancel} onReschedule={reschedule} />
+      {items.length > 0 && <ReservationRows store={store} items={items} onUpload={upload} onDocumentUpload={uploadDocument} onCancel={cancel} onReschedule={reschedule} />}
+      {visitorItems.length > 0 && <VisitorRows items={visitorItems} />}
+      {!items.length && !visitorItems.length && <EmptyState>No matching requests found.</EmptyState>}
     </article>
   );
 }
 
-export function ApprovalRows({ store, items, office, onApprove, onReject }) {
+export function ApprovalRows({ store, items, office, onApprove, onReject, onAction }) {
   const [selected, setSelected] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [rejection, setRejection] = useState(null);
@@ -302,6 +328,35 @@ export function ApprovalRows({ store, items, office, onApprove, onReject }) {
               <p className="approval-route-note">Payment verification belongs to {item.office}, because it owns {item.resourceName}.</p>
             )}
             <ApprovalTrail reservation={item} />
+            {(() => {
+              const resource = store?.data.resources.find((candidate) => candidate.id === item.resourceId);
+              if (!resource || resource.type !== "Vehicle" || resource.driver !== "With Driver") return null;
+              const assignment = store.reservationDriver(item.id);
+              const drivers = store.availableDriversForOffice(item.office);
+              return (
+                <div className="field driver-assignment">
+                  <label htmlFor={`driver-select-${item.id}`}>Assigned driver</label>
+                  <select
+                    id={`driver-select-${item.id}`}
+                    className="select"
+                    value={assignment?.driverId || ""}
+                    onChange={(event) => {
+                      const driverId = event.target.value;
+                      if (driverId) onAction(() => store.assignDriver(item.id, driverId), "Driver assigned.");
+                      else onAction(() => store.unassignDriver(item.id), "Driver unassigned.");
+                    }}
+                  >
+                    <option value="">No driver assigned</option>
+                    {assignment && !drivers.some((driver) => driver.id === assignment.driverId) && (
+                      <option value={assignment.driverId}>{assignment.driverName}</option>
+                    )}
+                    {drivers.map((driver) => (
+                      <option key={driver.id} value={driver.id}>{driver.name}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
           </div>
           {onApprove && (
             <div className="split-actions">
@@ -489,6 +544,7 @@ export function ApprovalsView({ store, onAction }) {
           office={store.officeScope}
           onApprove={(id, stepId, reservation) => onAction(() => store.approveReservation(id, stepId), approvalSuccessMessage(reservation, stepId))}
           onReject={(id, stepId, reason) => onAction(() => store.rejectReservation(id, stepId, reason), "Reservation rejected.")}
+          onAction={onAction}
         />
       </article>
       <article className="card">

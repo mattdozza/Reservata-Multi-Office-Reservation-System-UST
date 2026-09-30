@@ -3,7 +3,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { authenticatedUser, requireOffice, requireRole, ROLES } from "../lib/auth.mjs";
 import { HttpError, json, method, parseBody, requireFields, wrap } from "../lib/http.mjs";
 import { repository } from "../lib/repository.mjs";
-import { activityRecord, createId, newestFirst, notificationRecord, now } from "../lib/records.mjs";
+import { activityRecord, approvalRecord, createId, newestFirst, notificationRecord, now, reservationHistoryRecord } from "../lib/records.mjs";
 import { effectivePaymentDeadlineHours, expireReservations, paymentDeadlineFor, RESOLVED_RESERVATION_STATUSES } from "../lib/reservationLifecycle.mjs";
 import { lockExpiry, reservationSlots } from "../lib/slots.mjs";
 import { TABLES } from "../lib/tables.mjs";
@@ -293,6 +293,9 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       const resource = await repo.get(TABLES.resources, { id: body.resourceId });
       if (!resource) throw new HttpError(404, "Selected resource was not found.");
       if (resource.status !== "Available") throw new HttpError(409, "Selected resource is not available.");
+      if (user.requesterType === "Student" && resource.type !== "Equipment") {
+        throw new HttpError(403, "Student accounts may only reserve Equipment resources.");
+      }
 
       const resourceDate = `${resource.id}#${body.date}`;
       const sameDay = await repo.query(TABLES.reservations, "resource-date-index", "resourceDate", resourceDate);
@@ -342,6 +345,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         { Put: { TableName: TABLES.reservations, Item: reservation, ConditionExpression: "attribute_not_exists(id)" } },
         { Put: { TableName: TABLES.notifications, Item: notification } },
         { Put: { TableName: TABLES.activity, Item: activity } },
+        { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(user, reservation, "Created", reservation.status) } },
         ...slots.map((slotKey) => ({ Put: {
           TableName: TABLES.reservationLocks,
           Item: { slotKey, reservationId: reservation.id, expiresAt: lockExpiry(reservation.date) },
@@ -377,6 +381,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
           } },
           { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.office, reservation.office, `${reservation.resourceName}: ${reservation.requester} cancelled the reservation. Reason: ${reason}`) } },
           { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation cancelled", reservation.resourceName, reservation.office, reservation.id, body.reason) } },
+          { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(user, reservation, reservation.status, "Cancelled", reason) } },
           ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
             Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
           }))
@@ -431,6 +436,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
           } },
           { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.office, reservation.office, `${reservation.resourceName}: ${reservation.requester} requested a reschedule to ${body.date} ${body.start}-${body.end}.`) } },
           { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Reservation rescheduled", reservation.resourceName, reservation.office, reservation.id, `${reservation.date} ${reservation.start}-${reservation.end} -> ${body.date} ${body.start}-${body.end}`) } },
+          { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(user, reservation, reservation.status, "Under Owner Review", `${reservation.date} ${reservation.start}-${reservation.end} -> ${body.date} ${body.start}-${body.end}`) } },
           ...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
             Delete: { TableName: TABLES.reservationLocks, Key: { slotKey } }
           })),
@@ -485,7 +491,8 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
             ExpressionAttributeValues: values
           } },
           { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.requesterEmail, reservation.requester, `${reservation.resourceName} status changed to ${nextStatus}${reason ? `. Reason: ${reason}` : "."}`) } },
-          { Put: { TableName: TABLES.activity, Item: activityRecord(user, `Reservation marked ${nextStatus}`, reservation.resourceName, reservation.office, reservation.id, body.reason) } }
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, `Reservation marked ${nextStatus}`, reservation.resourceName, reservation.office, reservation.id, body.reason) } },
+          { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(user, reservation, reservation.status, nextStatus, reason) } }
         ];
         if (["Completed", "No Show", "Cancelled", "Expired"].includes(nextStatus)) {
           transaction.push(...reservationSlots(reservation.resourceId, reservation.date, reservation.start, reservation.end).map((slotKey) => ({
@@ -505,6 +512,65 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         return json(200, { ...reservation, status: nextStatus, updatedAt });
       }
 
+      if (rawPath.endsWith("/driver/unassign")) {
+        requireRole(user, ROLES.officeAdmin, ROLES.superAdmin);
+        if (!canManageStatus(user, reservation)) throw new HttpError(403, "Only the owning office or Super Admin can manage driver assignment.");
+        const assignments = await repo.query(TABLES.reservationDrivers, "reservation-index", "reservationId", reservation.id);
+        const active = assignments.find((item) => item.status === "Assigned");
+        if (!active) throw new HttpError(409, "This reservation has no active driver assignment.");
+        await repo.transact([
+          { Update: {
+            TableName: TABLES.reservationDrivers,
+            Key: { id: active.id },
+            UpdateExpression: "SET #status = :unassigned, unassignedAt = :updatedAt, unassignedBy = :actor, updatedAt = :updatedAt",
+            ConditionExpression: "#status = :assigned",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":unassigned": "Unassigned", ":assigned": "Assigned", ":updatedAt": updatedAt, ":actor": user.name }
+          } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Driver unassigned", `${reservation.resourceName}: ${active.driverName}`, reservation.office, reservation.id) } }
+        ]);
+        return json(200, { reservationId: reservation.id, driverId: null });
+      }
+
+      if (rawPath.endsWith("/driver")) {
+        requireRole(user, ROLES.officeAdmin, ROLES.superAdmin);
+        if (!canManageStatus(user, reservation)) throw new HttpError(403, "Only the owning office or Super Admin can manage driver assignment.");
+        requireFields(body, ["driverId"]);
+        const resource = await repo.get(TABLES.resources, { id: reservation.resourceId });
+        if (!resource || resource.type !== "Vehicle" || resource.driver !== "With Driver") throw new HttpError(409, "This reservation does not require a driver.");
+        const driver = await repo.get(TABLES.drivers, { id: body.driverId });
+        if (!driver || driver.office !== reservation.office) throw new HttpError(404, "Driver not found for this office.");
+        if (driver.status !== "Available") throw new HttpError(409, "This driver is not available.");
+        const existingForReservation = await repo.query(TABLES.reservationDrivers, "reservation-index", "reservationId", reservation.id);
+        if (existingForReservation.some((item) => item.status === "Assigned")) throw new HttpError(409, "This reservation already has an assigned driver. Unassign it first.");
+        const driverAssignments = await repo.query(TABLES.reservationDrivers, "driver-index", "driverId", driver.id);
+        const activeReservationIds = driverAssignments.filter((item) => item.status === "Assigned").map((item) => item.reservationId);
+        if (activeReservationIds.length) {
+          const conflicting = await Promise.all(activeReservationIds.map((id) => repo.get(TABLES.reservations, { id })));
+          const hasConflict = conflicting.some((item) => item && item.date === reservation.date && !RESOLVED_RESERVATION_STATUSES.has(item.status) && overlaps(item, reservation));
+          if (hasConflict) throw new HttpError(409, "This driver is already assigned to an overlapping reservation.");
+        }
+        const assignment = {
+          id: createId("RD"),
+          reservationId: reservation.id,
+          driverId: driver.id,
+          driverName: driver.name,
+          vehicleResourceId: resource.id,
+          office: reservation.office,
+          status: "Assigned",
+          assignedAt: updatedAt,
+          assignedBy: user.name,
+          assignedByEmail: user.email,
+          createdAt: updatedAt,
+          updatedAt
+        };
+        await repo.transact([
+          { Put: { TableName: TABLES.reservationDrivers, Item: assignment, ConditionExpression: "attribute_not_exists(id)" } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Driver assigned", `${reservation.resourceName}: ${driver.name}`, reservation.office, reservation.id) } }
+        ]);
+        return json(200, assignment);
+      }
+
       requireRole(user, ROLES.officeAdmin, ROLES.osgAdmin);
       if (typeof body.approved !== "boolean") throw new HttpError(400, "approved must be true or false.");
       requireFields(body, ["stepId"]);
@@ -519,6 +585,15 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         reservation.requester,
         body.approved ? `${pendingStep.name} was approved. Current status: ${status}.` : `${reservation.resourceName} was rejected during ${pendingStep.name}.`
       );
+      const workflow = await repo.get(TABLES.approvalWorkflows, { id: reservation.workflowTemplateId });
+      const templateStep = workflow?.steps?.find((item) => item.id === pendingStep.templateStepId);
+      let approvingBody = null;
+      if (templateStep?.approvingBodyId) {
+        approvingBody = await repo.get(TABLES.approvingBodies, { id: templateStep.approvingBodyId });
+      } else {
+        const bodies = await repo.query(TABLES.approvingBodies, "office-index", "office", pendingStep.office);
+        approvingBody = bodies.find((item) => item.status === "Active") || null;
+      }
       const transaction = [
         { Update: {
           TableName: TABLES.reservations,
@@ -529,7 +604,9 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
           ExpressionAttributeValues: { ":next": status, ":steps": decision.steps, ":nextVersion": nextVersion, ":updatedAt": updatedAt, ":expectedVersion": Number(reservation.workflowVersion || 1) }
         } },
         { Put: { TableName: TABLES.notifications, Item: notification } },
-        { Put: { TableName: TABLES.activity, Item: activity } }
+        { Put: { TableName: TABLES.activity, Item: activity } },
+        { Put: { TableName: TABLES.approvals, Item: approvalRecord(user, reservation, decision.step, body.approved, approvingBody, body.reason || "") } },
+        { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(user, reservation, reservation.status, status, body.reason || "") } }
       ];
 
       let payment;

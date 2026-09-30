@@ -19,7 +19,7 @@
 | Super Admin user management | Users & Roles role and account access controls |
 | Office coverage management | Office Management add/edit/status/archive and Coverage screens |
 | Approval workflow maintenance | Super Admin Approval Workflows editor for ordered, parallel, and conditional steps |
-| OSG visitor request | OSG Requester New Visitor Request |
+| OSG visitor request | New Visitor Request, available to Faculty/Staff/Student Org Rep affiliations |
 | OSG approval workflow | OSG Admin Visitor Requests and conditional Event Reviews |
 | Parking allocation | Parking screen |
 | Arrival monitoring | Arrival Monitor screen |

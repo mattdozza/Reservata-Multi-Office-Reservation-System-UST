@@ -21,7 +21,7 @@ import {
   UserRound,
   UsersRound
 } from "lucide-react";
-import { NAV_ITEMS, PAGE_TITLES } from "../config.js";
+import { navItemsFor, PAGE_TITLES } from "../config.js";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 
@@ -60,7 +60,7 @@ function navCount(store, view) {
 export default function AppShell({ store, onNavigate, onLogout, onReset, onNotification, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const user = store.currentUser;
-  const navItems = NAV_ITEMS[store.session.activeRole] || [];
+  const navItems = navItemsFor(store.session.activeRole, user.requesterType);
   const [title, subtitle] = PAGE_TITLES[store.session.activeView] || PAGE_TITLES.dashboard;
   const unread = store.visibleNotifications.filter((item) => item.unread).length;
 

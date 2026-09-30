@@ -40,6 +40,11 @@ Globals:
         SYSTEM_SETTINGS_TABLE: !Ref SystemSettingsTable
         NOTIFICATIONS_TABLE: !Ref NotificationsTable
         ACTIVITY_TABLE: !Ref ActivityTable
+        DRIVERS_TABLE: !Ref DriversTable
+        RESERVATION_DRIVERS_TABLE: !Ref ReservationDriversTable
+        APPROVING_BODIES_TABLE: !Ref ApprovingBodiesTable
+        APPROVALS_TABLE: !Ref ApprovalsTable
+        RESERVATION_HISTORY_TABLE: !Ref ReservationHistoryTable
         RECEIPTS_BUCKET: !Ref ReceiptsBucket
     Tags:
       Application: Reservata
@@ -92,6 +97,9 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
         - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref DriversTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ReservationDriversTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ApprovingBodiesTable }
       Events:
         Bootstrap:
           Type: HttpApi
@@ -109,6 +117,7 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
         - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref DriversTable }
       Events:
         ListResources: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resources, Method: GET } }
         UploadPhoto: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resource-photos, Method: POST } }
@@ -116,6 +125,9 @@ Resources:
         CreateResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /resources, Method: POST } }
         EditResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}", Method: PATCH } }
         UpdateResource: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}/status", Method: PATCH } }
+        ListDrivers: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /drivers, Method: GET } }
+        CreateDriver: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /drivers, Method: POST } }
+        EditDriver: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/drivers/{id}", Method: PATCH } }
 
   ReservationFunction:
     Type: AWS::Serverless::Function
@@ -133,6 +145,11 @@ Resources:
         - DynamoDBReadPolicy: { TableName: !Ref ApprovalWorkflowsTable }
         - DynamoDBReadPolicy: { TableName: !Ref SystemSettingsTable }
         - S3WritePolicy: { BucketName: !Ref ReceiptsBucket }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationDriversTable }
+        - DynamoDBReadPolicy: { TableName: !Ref DriversTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ApprovalsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationHistoryTable }
+        - DynamoDBReadPolicy: { TableName: !Ref ApprovingBodiesTable }
       Events:
         ListReservations: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /reservations, Method: GET } }
         CreateReservation: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /reservations, Method: POST } }
@@ -142,25 +159,28 @@ Resources:
         UpdateReservationStatus: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/status", Method: PATCH } }
         ResourceAvailability: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/resources/{id}/availability", Method: GET } }
         DocumentUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/document-upload", Method: POST } }
+        AssignDriver: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/driver", Method: PATCH } }
+        UnassignDriver: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/reservations/{id}/driver/unassign", Method: PATCH } }
 
   PaymentFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: backend/
-        Handler: src/handlers/payments.handler
-        Policies:
-          - S3ReadPolicy: { BucketName: !Ref ReceiptsBucket }
+      Handler: src/handlers/payments.handler
+      Policies:
+        - S3ReadPolicy: { BucketName: !Ref ReceiptsBucket }
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
         - DynamoDBCrudPolicy: { TableName: !Ref PaymentsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ReservationsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ReservationLocksTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
         - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReservationHistoryTable }
         - S3WritePolicy: { BucketName: !Ref ReceiptsBucket }
       Events:
         ListPayments: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /payments, Method: GET } }
-          ReceiptUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-upload", Method: POST } }
-          ReceiptComplete: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-complete", Method: POST } }
+        ReceiptUpload: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-upload", Method: POST } }
+        ReceiptComplete: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/receipt-complete", Method: POST } }
         VerifyPayment: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/payments/{id}/verification", Method: PATCH } }
 
   VisitorFunction:
@@ -192,14 +212,19 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref SystemSettingsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ActivityTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ApprovingBodiesTable }
       Events:
         ListUsers: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /users, Method: GET } }
         CreateUser: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /users, Method: POST } }
         UpdateUserRole: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/users/{email}/role", Method: PATCH } }
         UpdateUserAccess: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/users/{email}/access", Method: PATCH } }
+        UpdateUserRequesterType: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/users/{email}/requester-type", Method: PATCH } }
         ListOffices: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /offices, Method: GET } }
         CreateOffice: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /offices, Method: POST } }
         UpdateOffice: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/offices/{id}", Method: PATCH } }
+        ListApprovingBodies: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /approving-bodies, Method: GET } }
+        CreateApprovingBody: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /approving-bodies, Method: POST } }
+        UpdateApprovingBody: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/approving-bodies/{id}", Method: PATCH } }
         ListWorkflows: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /workflows, Method: GET } }
         CreateWorkflow: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: /workflows, Method: POST } }
         UpdateWorkflow: { Type: HttpApi, Properties: { ApiId: !Ref ReservataApi, Path: "/workflows/{id}", Method: PATCH } }
@@ -384,6 +409,90 @@ Resources:
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
       Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
 
+  DriversTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ReservationDriversTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: reservationId, AttributeType: S }
+        - { AttributeName: driverId, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: reservation-index, KeySchema: [{ AttributeName: reservationId, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+        - { IndexName: driver-index, KeySchema: [{ AttributeName: driverId, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+        - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ApprovingBodiesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: office, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: office-index, KeySchema: [{ AttributeName: office, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ApprovalsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: reservationId, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: reservation-index, KeySchema: [{ AttributeName: reservationId, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
+  ReservationHistoryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: reservationId, AttributeType: S }
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - { IndexName: reservation-index, KeySchema: [{ AttributeName: reservationId, KeyType: HASH }], Projection: { ProjectionType: ALL } }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: !If [IsProduction, true, false] }
+      Tags: [{ Key: Application, Value: Reservata }, { Key: Environment, Value: !Ref EnvironmentName }]
+
   ReceiptsBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -427,3 +536,8 @@ Outputs:
   ApprovalWorkflowsTableName: { Value: !Ref ApprovalWorkflowsTable }
   NotificationsTableName: { Value: !Ref NotificationsTable }
   ActivityTableName: { Value: !Ref ActivityTable }
+  DriversTableName: { Value: !Ref DriversTable }
+  ReservationDriversTableName: { Value: !Ref ReservationDriversTable }
+  ApprovingBodiesTableName: { Value: !Ref ApprovingBodiesTable }
+  ApprovalsTableName: { Value: !Ref ApprovalsTable }
+  ReservationHistoryTableName: { Value: !Ref ReservationHistoryTable }

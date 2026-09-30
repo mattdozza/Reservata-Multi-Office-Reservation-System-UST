@@ -323,9 +323,10 @@ export function WorkflowsView({ store, onAction }) {
                     className="select"
                     value={step.office}
                     disabled={index === 0}
-                    onChange={(event) =>
-                      updateStep(index, "office", event.target.value)
-                    }
+                    onChange={(event) => {
+                      updateStep(index, "office", event.target.value);
+                      updateStep(index, "approvingBodyId", "");
+                    }}
                   >
                     <option value="$OWNER">Resource Owner</option>
                     {offices.map((office) => (
@@ -333,6 +334,26 @@ export function WorkflowsView({ store, onAction }) {
                         {office.name}
                       </option>
                     ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor={`step-approving-body-${step.id}`}>Approving body (optional)</label>
+                  <select
+                    id={`step-approving-body-${step.id}`}
+                    className="select"
+                    value={step.approvingBodyId || ""}
+                    onChange={(event) =>
+                      updateStep(index, "approvingBodyId", event.target.value)
+                    }
+                  >
+                    <option value="">No specific body (use office)</option>
+                    {store.data.approvingBodies
+                      .filter((body) => body.office === step.office && body.status === "Active")
+                      .map((body) => (
+                        <option key={body.id} value={body.id}>
+                          {body.bodyName}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div className="field">

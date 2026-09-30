@@ -28,6 +28,7 @@ export class ReservataStore {
     this.backendMode = "local";
     this.cloudUser = null;
     this.localUser = null;
+    this.pendingTempPassword = null;
   }
 
   async init() {
@@ -120,7 +121,8 @@ export class ReservataStore {
         initials: this.cloudUser.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
         roleLabel: this.cloudUser.role,
         office: this.cloudUser.office,
-        email: this.cloudUser.email
+        email: this.cloudUser.email,
+        requesterType: this.cloudUser.requesterType || ""
       };
     }
     if (this.backendMode === "local" && this.localUser) {
@@ -131,7 +133,8 @@ export class ReservataStore {
         initials: this.localUser.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
         roleLabel: this.localUser.role,
         office: this.localUser.office,
-        email: this.localUser.email
+        email: this.localUser.email,
+        requesterType: this.localUser.requesterType || ""
       };
     }
     return USERS[this.session.activeRole] || USERS.requester;

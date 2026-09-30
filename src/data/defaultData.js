@@ -8,5 +8,8 @@ export const DEFAULT_DATA = {
   approvalTemplates: [],
   systemSettings: [],
   notifications: [],
-  activity: []
+  activity: [],
+  drivers: [],
+  reservationDrivers: [],
+  approvingBodies: []
 };

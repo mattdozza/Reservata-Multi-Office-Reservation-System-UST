@@ -9,7 +9,12 @@ export const TABLES = {
   approvalWorkflows: process.env.APPROVAL_WORKFLOWS_TABLE,
   systemSettings: process.env.SYSTEM_SETTINGS_TABLE,
   notifications: process.env.NOTIFICATIONS_TABLE,
-  activity: process.env.ACTIVITY_TABLE
+  activity: process.env.ACTIVITY_TABLE,
+  drivers: process.env.DRIVERS_TABLE,
+  reservationDrivers: process.env.RESERVATION_DRIVERS_TABLE,
+  approvingBodies: process.env.APPROVING_BODIES_TABLE,
+  approvals: process.env.APPROVALS_TABLE,
+  reservationHistory: process.env.RESERVATION_HISTORY_TABLE
 };
 
 export function requireTableNames() {

@@ -33,5 +33,10 @@
     "email": "edtech.admin@ust.edu.ph",
     "salt": "2e9ab38fd861fc10b8b2d33cdcd4cc6f",
     "passwordHash": "4f19c2fdb2a8dc17cfe9484fbff3f2e991723a9012e422094c2808d900a91726c2447960fb8fae3fddfe65df288543a4929b6fb5096af25f03b93645ab4f303e"
+  },
+  {
+    "email": "faculty.requester@ust.edu.ph",
+    "salt": "a64a0d28655f686a78456861458de4fe",
+    "passwordHash": "9218225dc22311de6aeee577b26c6f98f541d5a1b10bc80dd31974667e700c1e5ea89b6080c9892d6185814ad997e8c26310a968f193e19f68ed74457968b667"
   }
 ]

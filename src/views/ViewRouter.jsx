@@ -12,7 +12,6 @@ import {
 import { OfficeSettingsView, WorkflowsView } from "./settings/SettingsViews.jsx";
 import {
   ArrivalsView,
-  MyVisitorRequestsView,
   NewVisitorView,
   ParkingView,
   VisitorRecordsView,
@@ -41,7 +40,6 @@ export default function ViewRouter({ store, selectedResourceId, selectedSchedule
     arrivals: <ArrivalsView {...props} />,
     visitorRecords: <VisitorRecordsView {...props} />,
     newVisitor: <NewVisitorView {...props} />,
-    myVisitorRequests: <MyVisitorRequestsView {...props} />,
     profile: <ProfileView {...props} />
   };
   return views[store.session.activeView] || views.dashboard;
