@@ -145,9 +145,9 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
             </select>
           </div>
           <div className="field"><label htmlFor="date">Date</label><input id="date" name="date" className="input" type="date" min={tomorrowIso()} value={slot.date} onChange={(event) => updateSlot("date", event.target.value)} required /></div>
+          <div className="field"><label htmlFor="quantity">Quantity</label><input id="quantity" name="quantity" className="input" type="number" min="1" max={selected?.capacity || undefined} value={slot.quantity} onChange={(event) => updateSlot("quantity", event.target.value)} /></div>
           <div className="field"><label htmlFor="start">Start time</label><input id="start" name="start" className="input" type="time" value={slot.start} onChange={(event) => updateSlot("start", event.target.value)} required /></div>
           <div className="field"><label htmlFor="end">End time</label><input id="end" name="end" className="input" type="time" value={slot.end} onChange={(event) => updateSlot("end", event.target.value)} required /></div>
-          <div className="field"><label htmlFor="quantity">Quantity / attendees</label><input id="quantity" name="quantity" className="input" type="number" min="1" max={selected?.capacity || undefined} value={slot.quantity} onChange={(event) => updateSlot("quantity", event.target.value)} /></div>
           {selected?.type === "Vehicle" && (
             <div className="field">
               <label htmlFor="driverChoice">Driver</label>
@@ -180,9 +180,7 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
         <div className="split-actions form-actions"><button className="primary-button" type="submit" disabled={!selected || checkingAvailability || availability.status !== "available"}>{checkingAvailability ? "Checking availability..." : "Submit Request"}</button></div>
       </ManagedForm>
       <aside className="stack">
-
         <section className="card">
-          <CardHeader title="Live availability" subtitle={selected ? `${selected.name} · capacity ${selected.capacity}` : "Select a resource"} />
           <div className={`availability-panel availability-${availability.status}`}>
             <Badge status={availability.status === "available" ? "Available" : availability.status === "conflict" ? "Unavailable" : "Pending"}>
               {availability.status}

@@ -913,4 +913,44 @@
   font-weight: 700;
 }
 
+/* Browse resources pagination */
+.resource-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.resource-pagination-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.resource-pagination-number {
+  min-width: 36px;
+  height: 36px;
+  display: inline-grid;
+  place-items: center;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.resource-pagination-number.active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
 

@@ -6,6 +6,7 @@ import { sortBy, tomorrowIso } from "../../shared/utils.js";
 const RESOURCE_TYPES = ["All", "Equipment", "Vehicle", "Visitor Service"];
 const CATEGORY_ORDER = ["Equipment", "Vehicle", "Visitor Service"];
 const RESOURCE_STATUSES = ["All", "Available", "Reserved", "In Use", "Under Maintenance", "Unavailable", "Archived"];
+const RESOURCE_PAGE_SIZE = 8;
 
 export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   const [filter, setFilter] = useState("All");
@@ -18,6 +19,7 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   const [schedule, setSchedule] = useState({ date: "", start: "08:00", end: "09:00" });
   const [availabilityOnly, setAvailabilityOnly] = useState(false);
   const [availability, setAvailability] = useState({});
+  const [page, setPage] = useState(1);
   const scheduleValid = schedule.date >= tomorrowIso() && schedule.start && schedule.end && schedule.start < schedule.end;
   const role = store.session.activeRole;
   const isStudent = role === "requester" && store.currentUser.requesterType === "Student";
@@ -61,11 +63,17 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
     check();
     return () => { active = false; };
   }, [resourceKey, scheduleKey, scheduleValid, store]);
+  useEffect(() => {
+    setPage(1);
+  }, [filter, statusFilter, query, office, capacity, payment, availabilityOnly, sort, schedule.date, schedule.start, schedule.end]);
   const visible = availabilityOnly && scheduleValid ? resources.filter((resource) => availability[resource.id]?.key === scheduleKey && availability[resource.id]?.status === "available") : resources;
+  const pageCount = Math.max(1, Math.ceil(visible.length / RESOURCE_PAGE_SIZE));
+  const activePage = Math.min(Math.max(page, 1), pageCount);
+  const pagedItems = visible.slice((activePage - 1) * RESOURCE_PAGE_SIZE, activePage * RESOURCE_PAGE_SIZE);
   const groupedCategories = (() => {
-    const extraTypes = [...new Set(visible.map((item) => item.type))].filter((type) => !CATEGORY_ORDER.includes(type)).sort();
+    const extraTypes = [...new Set(pagedItems.map((item) => item.type))].filter((type) => !CATEGORY_ORDER.includes(type)).sort();
     return [...CATEGORY_ORDER, ...extraTypes]
-      .map((type) => ({ type, items: visible.filter((item) => item.type === type) }))
+      .map((type) => ({ type, items: pagedItems.filter((item) => item.type === type) }))
       .filter((group) => group.items.length);
   })();
 
@@ -172,6 +180,25 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
         </section>
       ))}
       {!visible.length && <div className="empty-state card">{scheduleValid && resources.some((resource) => availability[resource.id]?.key !== scheduleKey) ? "Checking resource availability..." : "No matching resources found."}</div>}
+      {!!visible.length && (
+        <nav className="resource-pagination" aria-label="Resource pages">
+          <button className="secondary-button" disabled={activePage === 1} onClick={() => setPage(activePage - 1)} type="button">Previous</button>
+          <div className="resource-pagination-pages">
+            {Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => (
+              <button
+                className={`resource-pagination-number ${number === activePage ? "active" : ""}`}
+                aria-current={number === activePage ? "page" : undefined}
+                onClick={() => setPage(number)}
+                type="button"
+                key={number}
+              >
+                {number}
+              </button>
+            ))}
+          </div>
+          <button className="secondary-button" disabled={activePage === pageCount} onClick={() => setPage(activePage + 1)} type="button">Next</button>
+        </nav>
+      )}
     </>
   );
 }

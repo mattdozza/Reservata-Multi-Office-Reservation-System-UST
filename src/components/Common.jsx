@@ -142,7 +142,7 @@ export function ReservationDetails({ store, reservation }) {
         ["Office", reservation.office],
         ["Schedule", `${formatDate(reservation.date)} ${reservation.start}-${reservation.end}`],
         ["Warning", reservation.status === "Expired" ? reservation.expiryReason || "Reservation expired before final confirmation." : store.isReservationOverdue(reservation) ? "Scheduled time has passed without final confirmation or rejection." : "None"],
-        ["Quantity / attendees", reservation.quantity],
+        ["Quantity", reservation.quantity],
         ["Payment", reservation.requiresPayment ? payment?.status || "Required" : "Not required"],
         ["Decision reason", reservation.rejectionReason || "None"],
         ["Cancellation / expiry reason", reservation.cancellationReason || reservation.expiryReason || reservation.overrideReason || "None"],

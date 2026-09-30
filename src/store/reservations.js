@@ -317,7 +317,7 @@ export const reservationMethods = {
     const end = cleanText(values.end);
     if (!start || !end) throw new Error("Start and end time are required.");
     if (values.start >= values.end) throw new Error("End time must be later than start time.");
-    const quantity = validPositiveNumber(values.quantity || 1, "Quantity / attendees");
+    const quantity = validPositiveNumber(values.quantity || 1, "Quantity");
     if (quantity > Number(resource.capacity || 1)) throw new Error(`Quantity cannot exceed ${resource.name}'s capacity of ${resource.capacity}.`);
     const purpose = requireText(values.purpose, "Purpose", 10);
     if (this.hasConflict(resource.id, date, start, end)) {
