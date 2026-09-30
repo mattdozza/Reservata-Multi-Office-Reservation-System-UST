@@ -3,7 +3,6 @@ import {
   loadDatabase,
   loadSession,
   logoutLocalAccount,
-  resetDatabase,
   restoreLocalAccount,
   saveDatabase,
   saveSession
@@ -162,13 +161,6 @@ export class ReservataStore {
     this.session.activeRole = null;
     this.session.activeView = "dashboard";
     saveSession(this.session);
-  }
-
-  async reset() {
-    this.requireRole("superAdmin");
-    if (this.backendMode === "aws") throw new Error("Cloud data cannot be reset from the demonstration control.");
-    this.setData(await resetDatabase(this.apiAvailable));
-    await this.save();
   }
 
   async save(cloudOperation, previousData) {

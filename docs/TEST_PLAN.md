@@ -87,7 +87,7 @@ Steps:
 Expected result:
 
 - The Student account sees and can reserve only Equipment resources.
-- The Faculty/Staff/Student Org Rep account sees and can reserve Equipment, Facility, and Vehicle resources.
+- The Faculty/Staff/Student Org Rep account sees and can reserve Equipment and Vehicle resources.
 
 ## TC-003 Prevent Invalid Time
 
@@ -259,18 +259,7 @@ Expected result:
 
 - Change remains because it was saved through the local API to `data/db.json`.
 
-## TC-010 Reset Demo Data
-
-Steps:
-
-1. Click Reset Demo Data.
-2. Refresh the browser.
-
-Expected result:
-
-- Database returns to the default seed records.
-
-## TC-011 Production Build
+## TC-010 Production Build
 
 Steps:
 
@@ -282,7 +271,7 @@ Expected result:
 
 - The React frontend compiles into static files suitable for Amazon S3 and CloudFront.
 
-## TC-012 Responsive Layout
+## TC-011 Responsive Layout
 
 Steps:
 
@@ -296,7 +285,7 @@ Expected result:
 - Email, password, show-password, and sign-in controls remain readable and operable.
 - Navigation and content remain readable and operable.
 
-## TC-013 AWS Backend Unit Tests
+## TC-012 AWS Backend Unit Tests
 
 Steps:
 
@@ -310,7 +299,7 @@ Expected result:
 - Invalid or excessive booking ranges are rejected.
 - Correct 15-minute lock keys are generated.
 
-## TC-014 AWS Template Validation
+## TC-013 AWS Template Validation
 
 Steps:
 
@@ -323,7 +312,7 @@ Expected result:
 - The SAM template passes linting.
 - All JavaScript Lambda dependencies are installed and build artifacts are generated.
 
-## TC-014A Mock UST SSO
+## TC-013A Mock UST SSO
 
 Steps:
 
@@ -343,7 +332,7 @@ Expected result:
 - Authorization codes are short-lived, single-use, restricted to the local client and redirect origin, and cannot be exchanged with a wrong verifier.
 - Refresh restores a valid session, logout invalidates it, and invalid credentials do not return an authorization code.
 
-## TC-015 University SSO and Cloud RBAC
+## TC-014 University SSO and Cloud RBAC
 
 Steps:
 
@@ -358,11 +347,11 @@ Expected result:
 - Office Admin actions are limited to the assigned office.
 - Requester records are limited to the authenticated email.
 
-## TC-016 Conditional Multi-Office Approval
+## TC-015 Conditional Multi-Office Approval
 
 Steps:
 
-1. As Requester, reserve Multipurpose Hall and select setup support, external guests, and visitor parking.
+1. As Requester, reserve the Community Outreach Van and select setup support, external guests, and visitor parking.
 2. Confirm the preview contains one Simbahayan owner step followed by Facilities and two OSG steps at sequence 2.
 3. Approve the owner step as the Simbahayan Office Admin.
 4. Approve the setup step as the Facilities Office Admin.
@@ -375,7 +364,7 @@ Expected result:
 - The reservation becomes `For Payment` only after all four steps are approved.
 - A payment record is created with `Awaiting Receipt`, not `Pending Verification`.
 
-## TC-017 Office Resource Maintenance
+## TC-016 Office Resource Maintenance
 
 Steps:
 
@@ -393,7 +382,7 @@ Expected result:
 - Duplicate asset tags are rejected.
 - Archived resources are unavailable to requesters but remain available for audit and restoration.
 
-## TC-018 Super Admin Maintenance
+## TC-017 Super Admin Maintenance
 
 Steps:
 

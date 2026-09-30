@@ -130,10 +130,6 @@ Used after changes such as:
 - office, resource, and approval-workflow maintenance
 - payment deadline and additional-requirement settings
 
-## POST `/api/reset`
-
-Restores the database using `data/db.default.json`. Restricted to the Super Admin account.
-
 ## Local-to-AWS Mapping
 
 | Local API | AWS Equivalent |
@@ -141,6 +137,5 @@ Restores the database using `data/db.default.json`. Restricted to the Super Admi
 | `GET /api/state` | role-scoped `GET /bootstrap` and domain GET routes |
 | `/api/auth/*` local sessions | University SSO JWT validation plus Users-table lookup |
 | `PUT /api/state` | resource-specific Lambda commands |
-| `POST /api/reset` | development/admin-only seed operation |
 | `data/db.json` | encrypted DynamoDB tables |
 | local receipt filename | private S3 object key and presigned PUT URL |

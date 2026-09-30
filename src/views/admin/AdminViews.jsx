@@ -236,13 +236,15 @@ export function UsersView({ store, onAction }) {
             <option value="role">Sort by role</option>
             <option value="status">Sort by status</option>
           </select>
-          <button className="secondary-button" onClick={() => downloadCsv("reservata-users.csv", people.map((person) => ({
-            name: person.name,
-            email: person.email,
-            office: person.office,
-            role: person.role,
-            status: person.status
-          })))} disabled={!people.length} type="button">Export CSV</button>
+          {["Office Admin", "Super Admin"].includes(store.currentUser.roleLabel) && (
+            <button className="secondary-button" onClick={() => downloadCsv("reservata-users.csv", people.map((person) => ({
+              name: person.name,
+              email: person.email,
+              office: person.office,
+              role: person.role,
+              status: person.status
+            })))} disabled={!people.length} type="button">Export CSV</button>
+          )}
         </div>
       </div>
       <article className="card table-wrap">
@@ -332,7 +334,7 @@ export function ActivityView({ store }) {
       <CardHeader
         title="Audit trail"
         subtitle="Reservation, payment, user, and visitor actions"
-        action={<button className="secondary-button" onClick={() => downloadCsv("reservata-audit-trail.csv", visibleActivity.map((item) => ({
+        action={["Office Admin", "Super Admin"].includes(store.currentUser.roleLabel) && <button className="secondary-button" onClick={() => downloadCsv("reservata-audit-trail.csv", visibleActivity.map((item) => ({
           action: item.action,
           actor: item.actor,
           target: item.target,

@@ -485,6 +485,10 @@ textarea:focus-visible {
   padding: 22px 18px;
   background: var(--ink);
   color: #fff;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar-header {
@@ -1116,7 +1120,8 @@ tbody tr:hover {
 
 .badge.reserved,
 .badge.office,
-.badge.under-additional-review {
+.badge.under-additional-review,
+.badge.completed {
   border: 1px solid #d2e4ea;
   background: #e8f6f9;
   color: var(--blue);

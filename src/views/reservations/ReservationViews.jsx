@@ -2,9 +2,10 @@ import ManagedForm from "../../components/ManagedForm.jsx";
 import ResourcePhoto from "../../components/ResourcePhoto.jsx";
 import ReservationTimeline from "../../components/ReservationTimeline.jsx";
 import { readReservationDraft, reservationDraftKey } from "../../domain/reservations/drafts.js";
+import { MONTH_LABELS, monthCells, shiftMonth, WEEKDAY_LABELS } from "../../domain/reservations/requesterCalendar.js";
 import { reservationErrors } from "../../domain/reservations/validation.js";
 import { useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 import { ApprovalTrail, Badge, CardHeader, ConfirmModal, DetailGrid, DetailModal, EmptyState, ReceiptPreview, ReservationRows } from "../../components/Common.jsx";
 import { VISITOR_CAPABLE_REQUESTER_TYPES } from "../../config.js";
 import { compareDateTime, displayTimestamp, downloadCsv, formatDate, sortBy, todayIso, tomorrowIso } from "../../shared/utils.js";
@@ -37,11 +38,12 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
   const [purpose, setPurpose] = useState(restored?.purpose || "");
   const [showErrors, setShowErrors] = useState(false);
   const [draftVersion, setDraftVersion] = useState(0);
-  const allowedTypes = store.currentUser.requesterType === "Student" ? ["Equipment"] : ["Equipment", "Facility", "Vehicle"];
+  const allowedTypes = store.currentUser.requesterType === "Student" ? ["Equipment"] : ["Equipment", "Vehicle"];
   const available = store.data.resources.filter(
-    (item) => item.status === "Available" && allowedTypes.includes(item.type)
+    (item) => allowedTypes.includes(item.type)
   );
-  const [resourceId, setResourceId] = useState(selectedResourceId || restored?.resourceId || available[0]?.id || "");
+  const [resourceId, setResourceId] = useState(selectedResourceId || restored?.resourceId || "");
+  const [driverChoice, setDriverChoice] = useState(restored?.driverChoice || "Without Driver");
   const [slot, setSlot] = useState(selectedSchedule ? { ...selectedSchedule, quantity: restored?.slot.quantity || "1" } : restored?.slot || { date: tomorrowIso(), start: "08:00", end: "09:00", quantity: "1" });
   const requirementOptions = store.requirementOptions;
   const requirementKey = requirementOptions.map((option) => option.id).join("|");
@@ -52,7 +54,7 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
   useEffect(() => {
     if (!draftChanged) return;
     try {
-      localStorage.setItem(draftKey, JSON.stringify({ resourceId, slot, requirements, purpose }));
+      localStorage.setItem(draftKey, JSON.stringify({ resourceId, slot, requirements, purpose, driverChoice }));
       setDraftError("");
     } catch { setDraftError("Draft could not be saved on this device. Keep this page open until you submit."); }
   }, [draftChanged, draftKey, resourceId, slot, requirements, purpose]);
@@ -64,10 +66,12 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
     setResourceId(selectedResourceId || available[0]?.id || "");
     setSlot({ date: tomorrowIso(), start: "08:00", end: "09:00", quantity: "1" });
     setRequirements(Object.fromEntries(requirementOptions.map((option) => [option.id, false])));
+    setDriverChoice("Without Driver");
     setDraftVersion((value) => value + 1);
   }
   const template = store.data.approvalTemplates.find((item) => item.id === selected?.workflowTemplateId && item.status === "Active")
     || store.data.approvalTemplates.find((item) => item.id === "WF-BASIC");
+  const hasConditionalSteps = (template?.steps || []).some((step) => step.condition && step.condition !== "always");
   const previewSteps = selected ? buildApprovalSteps(template, selected, requirements, "PREVIEW") : [];
   const localAvailability = store.resourceAvailability(resourceId, slot.date, slot.start, slot.end);
   const [remoteAvailability, setRemoteAvailability] = useState(null);
@@ -126,16 +130,16 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
   return (
     <div className="grid two-col">
       <ManagedForm className="card form-card" onSubmit={submit} resetKey={draftVersion} onChange={() => setDraftChanged(true)}>
-        {(restored || draftChanged) && <div className="draft-notice"><span>{draftError || (restored ? "Reservation draft restored. Not submitted." : "Draft saved on this device. Not submitted.")}</span><button type="button" className="secondary-button" onClick={discardDraft}>Discard draft</button></div>}
-        {!selected && <p className="field-error" role="alert">The saved resource is no longer available. Select another resource.</p>}
+        {draftChanged && <div className="draft-notice"><span>{draftError || "Draft saved on this device. Not submitted."}</span><button type="button" className="secondary-button" onClick={discardDraft}>Discard draft</button></div>}
+        {!selected && (draftChanged || restored) && <p className="field-error" role="alert">The saved resource is no longer available. Select another resource.</p>}
         <div className="form-grid">
           <div className="field span-2">
             <label htmlFor="resourceId">Resource</label>
             <select id="resourceId" name="resourceId" className="select" value={resourceId} onChange={(event) => setResourceId(event.target.value)} required>
-              {!selected && <option value={resourceId}>Select an available resource</option>}
+              <option value="">Choose resource</option>
               {available.map((item) => (
                 <option value={item.id} key={item.id}>
-                  {item.name} · {item.type}{item.requiresPayment ? ` · PHP ${item.fee}` : ""}
+                  {item.name} · {item.type}
                 </option>
               ))}
             </select>
@@ -144,20 +148,31 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
           <div className="field"><label htmlFor="start">Start time</label><input id="start" name="start" className="input" type="time" value={slot.start} onChange={(event) => updateSlot("start", event.target.value)} required /></div>
           <div className="field"><label htmlFor="end">End time</label><input id="end" name="end" className="input" type="time" value={slot.end} onChange={(event) => updateSlot("end", event.target.value)} required /></div>
           <div className="field"><label htmlFor="quantity">Quantity / attendees</label><input id="quantity" name="quantity" className="input" type="number" min="1" max={selected?.capacity || undefined} value={slot.quantity} onChange={(event) => updateSlot("quantity", event.target.value)} /></div>
-          <fieldset className="field span-2 requirement-fields">
-            <legend>Additional requirements</legend>
-            {requirementOptions.map((option) => (
-              <label className="check-field" key={option.id} title={option.help}>
-                <input
-                  checked={Boolean(requirements[option.id])}
-                  name={option.id}
-                  onChange={(event) => setRequirements((current) => ({ ...current, [option.id]: event.target.checked }))}
-                  type="checkbox"
-                />
-                <span><strong>{option.label}</strong><small>{option.help}</small></span>
-              </label>
-            ))}
-          </fieldset>
+          {selected?.type === "Vehicle" && (
+            <div className="field">
+              <label htmlFor="driverChoice">Driver</label>
+              <select id="driverChoice" name="driverChoice" className="select" value={driverChoice} onChange={(event) => setDriverChoice(event.target.value)}>
+                <option>With Driver</option>
+                <option>Without Driver</option>
+              </select>
+            </div>
+          )}
+          {hasConditionalSteps && (
+            <fieldset className="field span-2 requirement-fields">
+              <legend>Additional requirements</legend>
+              {requirementOptions.map((option) => (
+                <label className="check-field" key={option.id} title={option.help}>
+                  <input
+                    checked={Boolean(requirements[option.id])}
+                    name={option.id}
+                    onChange={(event) => setRequirements((current) => ({ ...current, [option.id]: event.target.checked }))}
+                    type="checkbox"
+                  />
+                  <span><strong>{option.label}</strong><small>{option.help}</small></span>
+                </label>
+              ))}
+            </fieldset>
+          )}
           <div className="field span-2"><label htmlFor="purpose">Purpose</label><textarea id="purpose" name="purpose" className="textarea" minLength={10} value={purpose} onChange={(event) => setPurpose(event.target.value)} required placeholder="Describe the activity, class, event, or office purpose." />{showErrors && errors.purpose && <small className="field-error">{errors.purpose}</small>}</div>
         </div>
         {showErrors && Object.entries(errors).filter(([field]) => field !== "purpose").map(([field, message]) => <p className="field-error" key={field}><a href={`#${field}`}>{message}</a></p>)}
@@ -165,7 +180,7 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
         <div className="split-actions form-actions"><button className="primary-button" type="submit" disabled={!selected || checkingAvailability || availability.status !== "available"}>{checkingAvailability ? "Checking availability..." : "Submit Request"}</button></div>
       </ManagedForm>
       <aside className="stack">
-        {selected && <ResourcePhoto resource={selected} />}
+
         <section className="card">
           <CardHeader title="Live availability" subtitle={selected ? `${selected.name} · capacity ${selected.capacity}` : "Select a resource"} />
           <div className={`availability-panel availability-${availability.status}`}>
@@ -233,6 +248,25 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
             {selected?.requiresPayment && <div className="timeline-item"><strong>Payment verification</strong><small>{selected.office} · after operational approvals</small></div>}
           </div>
         </section>
+        {selected?.requiresPayment && (
+          <section className="card">
+            <CardHeader title="Payment details" subtitle="Fee information for this resource" />
+            <div className="detail-box">
+              <p><strong>Amount:</strong> PHP {selected.fee}</p>
+              <p><strong>Payment office:</strong> {selected.office}</p>
+              <p className="detail-note">After your reservation is approved, you will be instructed to upload a payment receipt for verification.</p>
+            </div>
+          </section>
+        )}
+        {selected?.type === "Vehicle" && (
+          <section className="card">
+            <CardHeader title="Driver information" subtitle="Driver assignment for this vehicle" />
+            <div className="detail-box">
+              <p><strong>Driver requirement:</strong> {selected.driver}</p>
+              {selected.driver === "With Driver" && <p className="detail-note">A driver will be assigned by the office during the approval process.</p>}
+            </div>
+          </section>
+        )}
       </aside>
     </div>
   );
@@ -274,15 +308,7 @@ export function ReservationsView({ store, onAction }) {
       <CardHeader
         title="My Requests"
         subtitle="Reservations and visitor access requests"
-        action={<button className="secondary-button" onClick={() => downloadCsv("reservata-my-requests.csv", items.map((item) => ({
-          id: item.id,
-          resource: item.resourceName,
-          office: item.office,
-          date: item.date,
-          time: `${item.start}-${item.end}`,
-          status: item.status,
-          purpose: item.purpose
-        })))} disabled={!items.length} type="button">Export CSV</button>}
+        action={null}
       />
       {!!store.overdueReservations.length && (
         <OverdueNotice
@@ -694,6 +720,30 @@ function reservationEnded(reservation) {
   return new Date(`${reservation.date}T${reservation.end || reservation.start || "00:00"}`).getTime() <= Date.now();
 }
 
+const ADMIN_CALENDAR_LEGEND = [
+  { label: "Confirmed", className: "confirmed" },
+  { label: "In Use", className: "in-use" },
+  { label: "Completed", className: "completed" },
+  { label: "Cancelled", className: "cancelled" },
+  { label: "Rejected", className: "rejected" },
+  { label: "Expired", className: "expired" },
+  { label: "No Show", className: "no-show" },
+  { label: "Pending", className: "pending" }
+];
+
+function statusTone(status) {
+  const normalized = String(status || "").toLowerCase().replace(/[\s-]+/g, "-");
+  if (["confirmed", "approved", "arrived"].includes(normalized)) return "confirmed";
+  if (["in-use", "active", "osg"].includes(normalized)) return "in-use";
+  if (["completed", "verified", "available"].includes(normalized)) return "completed";
+  if (["cancelled", "failed"].includes(normalized)) return "cancelled";
+  if (normalized === "rejected") return "rejected";
+  if (["expired", "overdue-review"].includes(normalized)) return "expired";
+  if (["no-show"].includes(normalized)) return "no-show";
+  if (["pending", "for-payment", "awaiting-receipt", "under-owner-review", "reserved", "office", "under-additional-review"].includes(normalized)) return "pending";
+  return "pending";
+}
+
 export function CalendarView({ store, onAction }) {
   const [month, setMonth] = useState(todayIso().slice(0, 7));
   const [resourceId, setResourceId] = useState("All");
@@ -701,12 +751,16 @@ export function CalendarView({ store, onAction }) {
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [statusAction, setStatusAction] = useState(null);
   const [year, monthNumber] = month.split("-").map(Number);
-  const daysInMonth = new Date(year, monthNumber, 0).getDate();
-  const firstDay = new Date(year, monthNumber - 1, 1).getDay();
-  const cells = Array.from({ length: 42 }, (_, index) => {
-    const day = index - firstDay + 1;
-    return day >= 1 && day <= daysInMonth ? day : null;
-  });
+  const cells = monthCells(month);
+  const baseYear = Number(todayIso().slice(0, 4));
+  const years = [...new Set([baseYear - 1, baseYear, baseYear + 1, baseYear + 2, year])].sort((left, right) => left - right);
+
+  function openMonth(next) {
+    if (!next) return;
+    setMonth(next);
+    setSelectedDate(`${next}-01`);
+  }
+
   const events = store.data.reservations
     .filter((item) => item.date?.startsWith(month))
     .filter((item) => resourceId === "All" || item.resourceId === resourceId)
@@ -717,11 +771,25 @@ export function CalendarView({ store, onAction }) {
   const statusOptions = ["All", ...new Set(store.data.reservations.map((item) => item.status))];
 
   return (
-    <div className="grid two-col calendar-layout">
-      <article className="card">
-        <CardHeader title="Reservation calendar" subtitle="Confirmed and in-progress reservations by day" />
-        <div className="toolbar list-toolbar">
-          <input className="input status-filter" type="month" value={month} onChange={(event) => { setMonth(event.target.value); setSelectedDate(`${event.target.value}-01`); }} aria-label="Calendar month" />
+    <div className="grid calendar-layout admin-calendar">
+      <article className="card admin-calendar-surface">
+        <div className="calendar-nav">
+          <button className="icon-button calendar-nav-button" onClick={() => openMonth(shiftMonth(month, -1))} aria-label="Previous month" type="button">
+            <ChevronLeft aria-hidden="true" size={18} />
+          </button>
+          <div className="calendar-nav-selects">
+            <select className="select calendar-nav-select" value={String(monthNumber)} onChange={(event) => openMonth(`${year}-${String(event.target.value).padStart(2, "0")}`)} aria-label="Calendar month">
+              {MONTH_LABELS.map((label, index) => <option value={String(index + 1)} key={label}>{label}</option>)}
+            </select>
+            <select className="select calendar-nav-select" value={String(year)} onChange={(event) => openMonth(`${event.target.value}-${String(monthNumber).padStart(2, "0")}`)} aria-label="Calendar year">
+              {years.map((item) => <option value={String(item)} key={item}>{item}</option>)}
+            </select>
+          </div>
+          <button className="icon-button calendar-nav-button" onClick={() => openMonth(shiftMonth(month, 1))} aria-label="Next month" type="button">
+            <ChevronRight aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="toolbar calendar-toolbar">
           <select className="select status-filter" value={resourceId} onChange={(event) => setResourceId(event.target.value)} aria-label="Filter calendar resource">
             <option value="All">All resources</option>
             {store.data.resources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -731,65 +799,75 @@ export function CalendarView({ store, onAction }) {
           </select>
         </div>
         <div className="calendar">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <div className="calendar-head" key={day}>{day}</div>)}
-          {cells.map((day, index) => {
-            if (!day) return <div className="calendar-day muted" key={`blank-${index}`} />;
-            const date = `${month}-${String(day).padStart(2, "0")}`;
-            const eventsForDay = events.filter((item) => item.date === date);
+          {WEEKDAY_LABELS.map((day) => <div className="calendar-head" key={day}>{day}</div>)}
+          {cells.map((cell) => {
+            if (!cell.inMonth) {
+              return <div className="calendar-day muted" key={cell.key}><strong>{cell.day}</strong></div>;
+            }
+            const eventsForDay = events.filter((item) => item.date === cell.date);
             return (
-              <button className={`calendar-day calendar-button ${date === selectedDate ? "selected" : ""}`} onClick={() => setSelectedDate(date)} type="button" key={date}>
-                <strong>{day}</strong>
-                {eventsForDay.slice(0, 3).map((event) => <Badge status={event.status} className="event-pill" key={event.id}>{event.resourceName}</Badge>)}
+              <button className={`calendar-day calendar-button ${cell.date === selectedDate ? "selected" : ""}`} onClick={() => setSelectedDate(cell.date)} type="button" key={cell.key}>
+                <strong>{cell.day}</strong>
+                {eventsForDay.slice(0, 3).map((event) => (
+                  <span className={`event-pill calendar-pill ${statusTone(event.status)}`} key={event.id}>{event.resourceName}</span>
+                ))}
                 {eventsForDay.length > 3 && <small>{eventsForDay.length - 3} more</small>}
               </button>
             );
           })}
         </div>
       </article>
-      <article className="card">
-        <CardHeader
-          title={formatDate(selectedDate)}
-          subtitle={`${dayEvents.length} reservation${dayEvents.length === 1 ? "" : "s"} scheduled`}
-          action={<button className="secondary-button" onClick={() => downloadCsv("reservata-calendar.csv", events.map((item) => ({
-            id: item.id,
-            resource: item.resourceName,
-            requester: item.requester,
-            date: item.date,
-            time: `${item.start}-${item.end}`,
-            status: item.status
-          })))} disabled={!events.length} type="button">Export CSV</button>}
-        />
-        {dayEvents.map((item) => (
-          <div className="list-item" key={item.id}>
-            <div>
-              <Badge status={item.status} />
-              {item.isOverdue && <Badge status="Overdue Review" className="overdue-badge">Overdue</Badge>}
-              <h3 className="item-title">{item.resourceName}</h3>
-              <p>{item.start}-{item.end} · {item.requester} · {item.office}</p>
-              <p>{item.purpose}</p>
-            </div>
-            {canManageReservationStatus(store, item) && onAction && (
-              <div className="split-actions">
-                {item.status === "Confirmed" && !reservationStarted(item) && (
-                  <button className="secondary-button" onClick={() => setStatusAction({ item, status: "Cancelled", label: "Cancel Reservation" })} type="button">Cancel</button>
-                )}
-                {item.status === "Confirmed" && reservationStarted(item) && !reservationEnded(item) && (
-                  <button className="success-button" onClick={() => onAction(() => store.updateReservationLifecycleStatus(item.id, "In Use"), "Reservation marked in use.")} type="button">Start Use</button>
-                )}
-                {(item.status === "In Use" || (item.status === "Confirmed" && reservationEnded(item))) && (
-                  <button className="success-button" onClick={() => onAction(() => store.updateReservationLifecycleStatus(item.id, "Completed"), "Reservation completed.")} type="button">Complete</button>
-                )}
-                {item.status === "Confirmed" && reservationStarted(item) && (
-                  <button className="secondary-button" onClick={() => setStatusAction({ item, status: "No Show", label: "Mark No Show" })} type="button">No Show</button>
-                )}
-                {!["Rejected", "Cancelled", "Completed", "Expired", "No Show"].includes(item.status) && (
-                  <button className="secondary-button" onClick={() => setStatusAction({ item, status: "Expired", label: "Expire Request" })} type="button">Expire</button>
+      <article className="card admin-calendar-surface admin-calendar-side">
+        <h2 className="calendar-side-title">Legend</h2>
+        <ul className="admin-legend">
+          {ADMIN_CALENDAR_LEGEND.map((item) => (
+            <li key={item.label}>
+              <span className={`legend-swatch ${item.className}`} aria-hidden="true" />
+              {item.label}
+            </li>
+          ))}
+        </ul>
+        <div className="calendar-side-divider" />
+        <h2 className="calendar-side-title">Selected Day</h2>
+        <p className="calendar-side-summary">
+          {formatDate(selectedDate)} · {dayEvents.length} reservation{dayEvents.length === 1 ? "" : "s"} scheduled
+        </p>
+        <div className="calendar-event-rows">
+          {dayEvents.map((item) => (
+            <div className="calendar-event-row" key={item.id}>
+              <span className={`legend-swatch ${statusTone(item.status)}`} aria-hidden="true" />
+              <div className="calendar-event-detail">
+                <strong>{item.resourceName}</strong>
+                <small>{item.start}-{item.end} · {item.requester} · {item.office}</small>
+                <small>{item.purpose}</small>
+                <div className="calendar-event-actions">
+                  <Badge status={item.status} />
+                  {item.isOverdue && <Badge status="Overdue Review" className="overdue-badge">Overdue</Badge>}
+                </div>
+                {canManageReservationStatus(store, item) && onAction && (
+                  <div className="split-actions">
+                    {item.status === "Confirmed" && !reservationStarted(item) && (
+                      <button className="secondary-button" onClick={() => setStatusAction({ item, status: "Cancelled", label: "Cancel Reservation" })} type="button">Cancel</button>
+                    )}
+                    {item.status === "Confirmed" && reservationStarted(item) && !reservationEnded(item) && (
+                      <button className="success-button" onClick={() => onAction(() => store.updateReservationLifecycleStatus(item.id, "In Use"), "Reservation marked in use.")} type="button">Start Use</button>
+                    )}
+                    {(item.status === "In Use" || (item.status === "Confirmed" && reservationEnded(item))) && (
+                      <button className="success-button" onClick={() => onAction(() => store.updateReservationLifecycleStatus(item.id, "Completed"), "Reservation completed.")} type="button">Complete</button>
+                    )}
+                    {item.status === "Confirmed" && reservationStarted(item) && (
+                      <button className="secondary-button" onClick={() => setStatusAction({ item, status: "No Show", label: "Mark No Show" })} type="button">No Show</button>
+                    )}
+                    {!["Rejected", "Cancelled", "Completed", "Expired", "No Show"].includes(item.status) && (
+                      <button className="secondary-button" onClick={() => setStatusAction({ item, status: "Expired", label: "Expire Request" })} type="button">Expire</button>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-        ))}
-        {!dayEvents.length && <EmptyState>No reservations for the selected day.</EmptyState>}
+            </div>
+          ))}
+        </div>
+        {!dayEvents.length && <p className="calendar-side-hint">No reservations for the selected day.</p>}
         {statusAction && (
           <ReasonModal
             title={`${statusAction.label}?`}

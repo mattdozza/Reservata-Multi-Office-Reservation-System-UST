@@ -19,10 +19,10 @@ export const adminMethods = {
     this.data.resources.push({
       id: `R-${Date.now()}`,
       name: "New Office Sample Resource",
-      type: "Facility",
+      type: "Equipment",
       office: "New Sample Office",
       location: "TBD",
-      capacity: 40,
+      capacity: 1,
       status: "Available",
       requiresPayment: false,
       driver: "Not applicable"

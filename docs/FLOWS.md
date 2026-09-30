@@ -26,12 +26,22 @@ Reminder behavior:
 - Requesters are reminded when a confirmed reservation is scheduled within 24 hours.
 - Offices are reminded when a review has been waiting longer than 24 hours.
 
-Example venue route:
+## Requester Calendar
+
+The Requester Calendar plots the signed-in requester's own reservations on the month grid.
+
+- `Reservation confirmed`: a confirmed or in-progress Vehicle reservation on its scheduled date.
+- `Pick up equipment`: an Equipment reservation the requester picks up on its scheduled date.
+- `Return equipment`: the same Equipment reservation once the owning office marks it `Completed`, or the return day of a multi-day loan.
+
+Only `Confirmed`, `In Use`, and `Completed` reservations appear; pending, payment, rejected, cancelled, expired, and no-show requests stay in My Requests. Selecting a date lists that day's events with the resource, time, and current status. Office Admin, Super Admin, and OSG Admin accounts keep the operational calendar with its resource, status, and lifecycle controls.
+
+Example vehicle route:
 
 ```txt
 Requester submission
-  -> Simbahayan venue-owner review (sequence 1)
-  -> Facilities setup review + OSG guest review + OSG parking review (sequence 2, parallel)
+  -> Simbahayan owner review (sequence 1)
+  -> OSG guest review + OSG parking review (sequence 2, parallel, when requested)
   -> Payment receipt and Simbahayan verification
   -> Confirmed reservation
 ```
@@ -71,7 +81,7 @@ OSG visitor processing is separate from reservation Event Reviews. Event Reviews
 - Requesters access only their reservations, payments, and notifications plus active reservable resources and workflows.
 - Every Requester account has an affiliation: Student, Faculty, Staff, or Student Org Rep, set by a Super Admin.
 - Student requesters may browse and reserve only Equipment resources, and cannot access visitor requests.
-- Faculty, Staff, and Student Org Rep requesters may reserve Equipment, Facility, and Vehicle resources, and may submit and track their own visitor access requests.
+- Faculty, Staff, and Student Org Rep requesters may reserve Equipment and Vehicle resources, and may submit and track their own visitor access requests.
 - Office Admins maintain only resources owned by their office and decide only steps assigned to that office.
 - Payment verification belongs to the resource-owning office, even when a support office completes the final operational step.
 - OSG Admins handle OSG-assigned event reviews and OSG visitor operations; they cannot edit resources, offices, users, or workflows.

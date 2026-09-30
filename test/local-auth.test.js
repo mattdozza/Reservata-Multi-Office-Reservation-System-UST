@@ -287,9 +287,9 @@ test("local API expires overdue unfinished reservations and payment handoffs", a
     id: "REQ-LOCAL-EXPIRED",
     requester: "Student Body Requester",
     resourceId: "R-001",
-    resourceName: "Multipurpose Hall",
-    office: "Simbahayan",
-    type: "Facility",
+    resourceName: "Robot 01",
+    office: "EdTech",
+    type: "Equipment",
     date,
     start: "09:00",
     end: "10:00",
@@ -334,7 +334,7 @@ test("local API expires overdue unfinished reservations and payment handoffs", a
     assert.equal(stateResponse.status, 200, state.error);
     assert.equal(state.reservations.find((item) => item.id === "REQ-LOCAL-EXPIRED").status, "Expired");
     assert.equal(state.payments.find((item) => item.id === "PAY-LOCAL-EXPIRED").status, "Expired");
-    assert.ok(state.notifications.some((item) => item.message.includes("expired because the scheduled time passed")));
+    assert.ok(state.notifications.some((item) => item.message.includes("expired because the payment deadline passed")));
 
     const saved = JSON.parse(fs.readFileSync(dbPath, "utf8"));
     assert.equal(saved.reservations.find((item) => item.id === "REQ-LOCAL-EXPIRED").status, "Expired");
@@ -440,10 +440,10 @@ test("supporting office can approve final step and create owner payment handoff"
   database.reservations.unshift({
     id: "REQ-LOCAL-HANDOFF-SOURCE",
     requester: "Student Body Requester",
-    resourceId: "R-002",
-    resourceName: "Main Chapel",
+    resourceId: "R-007",
+    resourceName: "Projector Set A",
     office: "Simbahayan",
-    type: "Facility",
+    type: "Equipment",
     date,
     start: "09:00",
     end: "10:00",
@@ -454,7 +454,7 @@ test("supporting office can approve final step and create owner payment handoff"
     requiresPayment: true,
     workflowTemplateId: "WF-EVENT",
     approvalSteps: [
-      { id: "REQ-LOCAL-HANDOFF-SOURCE-OWNER", name: "Venue Owner Review", office: "Simbahayan", status: "Approved", sequence: 1 },
+      { id: "REQ-LOCAL-HANDOFF-SOURCE-OWNER", name: "Owner Review", office: "Simbahayan", status: "Approved", sequence: 1 },
       { id: "REQ-LOCAL-HANDOFF-SOURCE-FAC", name: "Facilities and Setup Review", office: "Facilities Management", status: "Pending", sequence: 2 }
     ]
   });
@@ -481,7 +481,7 @@ test("supporting office can approve final step and create owner payment handoff"
     assert.equal(stateResponse.status, 200);
     const state = await stateResponse.json();
     const reservation = state.reservations.find((item) =>
-      item.resourceName === "Main Chapel"
+      item.resourceName === "Projector Set A"
       && item.office === "Simbahayan"
       && item.approvalSteps?.some((step) => step.office === "Facilities Management" && step.status === "Pending")
     );
@@ -524,10 +524,10 @@ test("local API lets requesters upload receipts and notify the payment office", 
   database.reservations.unshift({
     id: "REQ-LOCAL-RECEIPT",
     requester: "Student Body Requester",
-    resourceId: "R-004",
-    resourceName: "Multipurpose Hall",
+    resourceId: "R-007",
+    resourceName: "Projector Set A",
     office: "Simbahayan",
-    type: "Facility",
+    type: "Equipment",
     date: "2099-09-10",
     start: "09:00",
     end: "10:00",
@@ -537,7 +537,7 @@ test("local API lets requesters upload receipts and notify the payment office", 
     submittedAt: "Just now",
     requiresPayment: true,
     paymentId: "PAY-LOCAL-RECEIPT",
-    workflowTemplateId: "WF-VENUE",
+    workflowTemplateId: "WF-BASIC",
     approvalSteps: [{ id: "REQ-LOCAL-RECEIPT-OWNER", office: "Simbahayan", status: "Approved", sequence: 1 }]
   });
   database.payments.unshift({
@@ -579,7 +579,7 @@ test("local API lets requesters upload receipts and notify the payment office", 
       id: "N-LOCAL-RECEIPT",
       user: "Simbahayan",
       office: "Simbahayan",
-      message: "Multipurpose Hall: Student Body Requester uploaded a receipt for verification.",
+      message: "Projector Set A: Student Body Requester uploaded a receipt for verification.",
       unread: true,
       type: "Payment"
     });
@@ -587,7 +587,7 @@ test("local API lets requesters upload receipts and notify the payment office", 
       id: "ACT-LOCAL-RECEIPT",
       action: "Payment receipt uploaded",
       actor: "Student Body Requester",
-      target: "Multipurpose Hall",
+      target: "Projector Set A",
       time: "Just now"
     });
 
@@ -850,7 +850,7 @@ test("office admins can mark office notifications read without accessing private
   const originalDatabase = fs.readFileSync(dbPath, "utf8");
   const database = JSON.parse(originalDatabase);
   database.notifications.unshift(
-    { id: "N-OFFICE-READ", user: "Simbahayan", office: "Simbahayan", message: "Multipurpose Hall receipt needs verification.", unread: true, type: "Payment" },
+    { id: "N-OFFICE-READ", user: "Simbahayan", office: "Simbahayan", message: "Projector Set A receipt needs verification.", unread: true, type: "Payment" },
     { id: "N-REQUESTER-PRIVATE", user: "Student Body Requester", message: "Private requester notification.", unread: true, type: "Reservation" }
   );
   fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));

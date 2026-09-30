@@ -37,7 +37,7 @@ export default function LoginScreen() {
             <span className="welcome-line">Welcome to</span>
             <span className="product-line">RESERVATA</span>
           </h1>
-          <p className="login-copy">A unified UST operations portal for venue reservations, equipment and vehicle requests, payment verification, visitor access, and approval tracking.</p>
+          <p className="login-copy">A unified UST operations portal for equipment and vehicle requests, payment verification, visitor access, and approval tracking.</p>
         </div>
 
         <a

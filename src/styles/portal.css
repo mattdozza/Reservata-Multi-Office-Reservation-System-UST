@@ -621,3 +621,296 @@
     font-size: 28px;
   }
 }
+
+/* Reservation calendars (requester and admin accounts) */
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) {
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.42fr);
+  align-items: start;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.05);
+  padding: 20px;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-nav-selects {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-nav-select {
+  width: 150px;
+  padding: 8px 12px;
+  font-weight: 700;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-nav-button {
+  width: 38px;
+  height: 38px;
+  flex: none;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar {
+  border-top: 0;
+  border-left: 0;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-head {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: #8b9099;
+  letter-spacing: 0.08em;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-day {
+  height: 112px;
+  min-height: 112px;
+  padding: 6px 7px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-button strong,
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-day.muted strong {
+  color: #4a4f59;
+  font-size: 12px;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-button.selected {
+  background: #f4fafc;
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-day.muted {
+  background: #fafaf7;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-day.muted strong {
+  color: #b3b7bf;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-pill {
+  margin-top: 5px;
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .legend-swatch {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 4px;
+}
+
+.requester-calendar .calendar-pill.confirmed,
+.requester-calendar .legend-swatch.confirmed {
+  background: #fdf3da;
+  color: #8b5b00;
+}
+
+.requester-calendar .calendar-pill.pickup,
+.requester-calendar .legend-swatch.pickup {
+  background: #e8f6f9;
+  color: var(--blue);
+}
+
+.requester-calendar .calendar-pill.return,
+.requester-calendar .legend-swatch.return {
+  background: #f1eefc;
+  color: var(--purple);
+}
+
+/* Admin reservation calendar tones match the status badge palette */
+.admin-calendar .calendar-pill.confirmed,
+.admin-calendar .legend-swatch.confirmed {
+  background: #e7f5ef;
+  color: var(--green);
+}
+
+.admin-calendar .calendar-pill.in-use,
+.admin-calendar .legend-swatch.in-use {
+  background: #f1eefc;
+  color: var(--purple);
+}
+
+.admin-calendar .calendar-pill.completed,
+.admin-calendar .legend-swatch.completed {
+  background: #e8f6f9;
+  color: var(--blue);
+}
+
+.admin-calendar .calendar-pill.pending,
+.admin-calendar .legend-swatch.pending {
+  background: #fff4d8;
+  color: #8b5b00;
+}
+
+.admin-calendar .calendar-pill.cancelled,
+.admin-calendar .legend-swatch.cancelled,
+.admin-calendar .calendar-pill.rejected,
+.admin-calendar .legend-swatch.rejected,
+.admin-calendar .calendar-pill.expired,
+.admin-calendar .legend-swatch.expired,
+.admin-calendar .calendar-pill.no-show,
+.admin-calendar .legend-swatch.no-show {
+  background: #fce9e7;
+  color: var(--red);
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-side-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) :is(.requester-legend, .admin-legend) {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) :is(.requester-legend, .admin-legend) li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-side-divider {
+  height: 1px;
+  margin: 20px 0;
+  background: var(--line);
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-side-hint,
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-side-summary {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-event-rows {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-event-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-event-row .legend-swatch {
+  margin-top: 3px;
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-event-row strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+.view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-event-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@container (max-width: 960px) {
+  .view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 620px) {
+  .view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .card {
+    padding: 14px;
+  }
+
+  .view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-nav-select {
+    width: 118px;
+  }
+
+  .view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-day {
+    height: 96px;
+    min-height: 96px;
+    padding: 4px;
+  }
+
+  .view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-pill {
+    padding: 2px 4px;
+    font-size: 9px;
+  }
+}
+
+.view-root[data-view="calendar"] .admin-calendar .calendar-toolbar {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.view-root[data-view="calendar"] .admin-calendar .calendar-event-detail {
+  min-width: 0;
+}
+
+.view-root[data-view="calendar"] .admin-calendar .calendar-event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Browse resources grouped by category */
+.resource-category {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.resource-category-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.resource-category-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+

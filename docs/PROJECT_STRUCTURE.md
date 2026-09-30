@@ -22,7 +22,7 @@ src/
   services/                Local API, AWS API, SSO, and resource-photo operations
   domain/
     workflows.js           Shared approval-route rules
-    reservations/          Draft persistence, timeline assembly, form validation
+    reservations/          Draft persistence, timeline assembly, form validation, requester calendar events
   store/                   State and domain mutations: resources, bookings, payments, etc.
   shared/                  Cross-feature utilities and unsaved-form guards
   data/                    Frontend demonstration defaults

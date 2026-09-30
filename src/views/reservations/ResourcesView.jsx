@@ -3,7 +3,8 @@ import ResourcePhoto from "../../components/ResourcePhoto.jsx";
 import { Badge } from "../../components/Common.jsx";
 import { sortBy, tomorrowIso } from "../../shared/utils.js";
 
-const RESOURCE_TYPES = ["All", "Facility", "Vehicle", "Equipment", "Visitor Service"];
+const RESOURCE_TYPES = ["All", "Equipment", "Vehicle", "Visitor Service"];
+const CATEGORY_ORDER = ["Equipment", "Vehicle", "Visitor Service"];
 const RESOURCE_STATUSES = ["All", "Available", "Reserved", "In Use", "Under Maintenance", "Unavailable", "Archived"];
 
 export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
@@ -21,7 +22,7 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   const role = store.session.activeRole;
   const isStudent = role === "requester" && store.currentUser.requesterType === "Student";
   const allowedTypes = role === "requester"
-    ? (isStudent ? ["Equipment"] : ["Equipment", "Facility", "Vehicle"])
+    ? (isStudent ? ["Equipment"] : ["Equipment", "Vehicle"])
     : null;
   const typeTabs = allowedTypes ? ["All", ...allowedTypes] : RESOURCE_TYPES;
 
@@ -61,6 +62,12 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
     return () => { active = false; };
   }, [resourceKey, scheduleKey, scheduleValid, store]);
   const visible = availabilityOnly && scheduleValid ? resources.filter((resource) => availability[resource.id]?.key === scheduleKey && availability[resource.id]?.status === "available") : resources;
+  const groupedCategories = (() => {
+    const extraTypes = [...new Set(visible.map((item) => item.type))].filter((type) => !CATEGORY_ORDER.includes(type)).sort();
+    return [...CATEGORY_ORDER, ...extraTypes]
+      .map((type) => ({ type, items: visible.filter((item) => item.type === type) }))
+      .filter((group) => group.items.length);
+  })();
 
   return (
     <>
@@ -118,45 +125,53 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
           {schedule.date && !scheduleValid && <p className="field-error">Choose tomorrow or later, with an end time after the start time.</p>}
         </div>
       )}
-      <div className="grid four-col">
-        {visible.map((resource) => (
-          <article className="card resource-card" key={resource.id}>
-            <ResourcePhoto resource={resource} />
-            <div className="resource-body">
-              <Badge status={resource.status} />
-              <h3>{resource.name}</h3>
-              <p>{resource.type} · {resource.requiresPayment ? `Payment required: PHP ${Number(resource.fee || 0).toLocaleString()}` : "Free to reserve"}</p>
-              {scheduleValid && <p className="schedule-availability" role="status">{availability[resource.id]?.key !== scheduleKey ? "Checking this schedule..." : availability[resource.id].status === "available" ? "Available for this schedule" : availability[resource.id].status === "error" ? "Schedule could not be checked" : "Unavailable for this schedule"}</p>}
-              <p>
-                {resource.office} · {resource.location}<br />
-                {resource.assetTag && <>Tag: {resource.assetTag}<br /></>}
-                Capacity: {resource.capacity}
-                {resource.requiresPayment && ` · Fee: PHP ${resource.fee}`}
-              </p>
-              {resource.tags?.length ? (
-                <div className="tag-list">
-                  {resource.tags.map((tag) => <span key={tag}>{tag}</span>)}
+      {groupedCategories.map((group) => (
+        <section className="resource-category" key={group.type}>
+          <h2 className="resource-category-heading">
+            {group.type}
+            <span>{group.items.length} {group.items.length === 1 ? "resource" : "resources"}</span>
+          </h2>
+          <div className="grid four-col">
+            {group.items.map((resource) => (
+              <article className="card resource-card" key={resource.id}>
+                <ResourcePhoto resource={resource} />
+                <div className="resource-body">
+                  <Badge status={resource.status} />
+                  <h3>{resource.name}</h3>
+                  <p>{resource.requiresPayment ? `Payment required: PHP ${Number(resource.fee || 0).toLocaleString()}` : "Free to reserve"}</p>
+                  {scheduleValid && <p className="schedule-availability" role="status">{availability[resource.id]?.key !== scheduleKey ? "Checking this schedule..." : availability[resource.id].status === "available" ? "Available for this schedule" : availability[resource.id].status === "error" ? "Schedule could not be checked" : "Unavailable for this schedule"}</p>}
+                  <p>
+                    {resource.office} · {resource.location}<br />
+                    {resource.assetTag && <>Tag: {resource.assetTag}<br /></>}
+                    Capacity: {resource.capacity}
+                    {resource.requiresPayment && ` · Fee: PHP ${resource.fee}`}
+                  </p>
+                  {resource.tags?.length ? (
+                    <div className="tag-list">
+                      {resource.tags.map((tag) => <span key={tag}>{tag}</span>)}
+                    </div>
+                  ) : null}
+                  {role === "requester" ? (
+                    <button
+                      className="primary-button"
+                      onClick={() => onReserve(resource.id, scheduleValid ? schedule : null)}
+                      disabled={resource.status !== "Available" || Boolean(schedule.date && (!scheduleValid || availability[resource.id]?.key !== scheduleKey || availability[resource.id]?.status !== "available"))}
+                      type="button"
+                    >
+                      Reserve
+                    </button>
+                  ) : role === "officeAdmin" ? (
+                    <button className="secondary-button" onClick={() => onAction(() => store.cycleResourceStatus(resource.id), "Resource status updated.")} type="button">
+                      Update Status
+                    </button>
+                  ) : <span className="read-only-label">View only</span>}
                 </div>
-              ) : null}
-              {role === "requester" ? (
-                <button
-                  className="primary-button"
-                  onClick={() => onReserve(resource.id, scheduleValid ? schedule : null)}
-                  disabled={resource.status !== "Available" || Boolean(schedule.date && (!scheduleValid || availability[resource.id]?.key !== scheduleKey || availability[resource.id]?.status !== "available"))}
-                  type="button"
-                >
-                  Reserve
-                </button>
-              ) : role === "officeAdmin" ? (
-                <button className="secondary-button" onClick={() => onAction(() => store.cycleResourceStatus(resource.id), "Resource status updated.")} type="button">
-                  Update Status
-                </button>
-              ) : <span className="read-only-label">View only</span>}
-            </div>
-          </article>
-        ))}
-        {!visible.length && <div className="empty-state card">{scheduleValid && resources.some((resource) => availability[resource.id]?.key !== scheduleKey) ? "Checking resource availability..." : "No matching resources found."}</div>}
-      </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
+      {!visible.length && <div className="empty-state card">{scheduleValid && resources.some((resource) => availability[resource.id]?.key !== scheduleKey) ? "Checking resource availability..." : "No matching resources found."}</div>}
     </>
   );
 }

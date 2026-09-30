@@ -8,7 +8,11 @@
       "office": "EdTech",
       "location": "CICS Lab",
       "serialNumber": "ROB-UST-001",
-      "tags": ["Robotics", "Lab", "Prototype"],
+      "tags": [
+        "Robotics",
+        "Lab",
+        "Prototype"
+      ],
       "capacity": 1,
       "status": "Available",
       "requiresPayment": false,
@@ -22,7 +26,11 @@
       "office": "EdTech",
       "location": "CICS Lab",
       "serialNumber": "BOTKIT-UST-002",
-      "tags": ["Robotics", "Kit", "Classroom"],
+      "tags": [
+        "Robotics",
+        "Kit",
+        "Classroom"
+      ],
       "capacity": 4,
       "status": "Available",
       "requiresPayment": false,
@@ -36,26 +44,14 @@
       "office": "EdTech",
       "location": "CICS Stockroom",
       "serialNumber": "",
-      "tags": ["Laptop", "Loaner", "Stockroom"],
+      "tags": [
+        "Laptop",
+        "Loaner",
+        "Stockroom"
+      ],
       "capacity": 12,
       "status": "Reserved",
       "requiresPayment": false,
-      "driver": "Not applicable"
-    },
-    {
-      "id": "R-004",
-      "assetTag": "SIMBA-HALL-004",
-      "name": "Multipurpose Hall",
-      "type": "Facility",
-      "office": "Simbahayan",
-      "location": "UST Main Building",
-      "serialNumber": "",
-      "tags": ["Venue", "Event", "Paid"],
-      "capacity": 120,
-      "status": "Available",
-      "requiresPayment": true,
-      "fee": 1500,
-      "workflowTemplateId": "WF-VENUE",
       "driver": "Not applicable"
     },
     {
@@ -66,7 +62,11 @@
       "office": "Simbahayan",
       "location": "Carpark B",
       "serialNumber": "VAN-UST-005",
-      "tags": ["Vehicle", "Outreach", "Paid"],
+      "tags": [
+        "Vehicle",
+        "Outreach",
+        "Paid"
+      ],
       "capacity": 12,
       "status": "Available",
       "requiresPayment": true,
@@ -81,7 +81,11 @@
       "office": "Dominican Residence",
       "location": "Residence Garage",
       "serialNumber": "SHUTTLE-UST-006",
-      "tags": ["Vehicle", "Residence", "Maintenance"],
+      "tags": [
+        "Vehicle",
+        "Residence",
+        "Maintenance"
+      ],
       "capacity": 8,
       "status": "Under Maintenance",
       "requiresPayment": false,
@@ -95,7 +99,11 @@
       "office": "Simbahayan",
       "location": "AV Storage",
       "serialNumber": "PROJ-UST-007",
-      "tags": ["AV", "Projector", "Portable"],
+      "tags": [
+        "AV",
+        "Projector",
+        "Portable"
+      ],
       "capacity": 1,
       "status": "Available",
       "requiresPayment": false,
@@ -109,7 +117,11 @@
       "office": "OSG",
       "location": "Main Gate",
       "serialNumber": "",
-      "tags": ["Parking", "Visitor", "OSG"],
+      "tags": [
+        "Parking",
+        "Visitor",
+        "OSG"
+      ],
       "capacity": 20,
       "status": "Available",
       "requiresPayment": false,
@@ -131,22 +143,6 @@
       "status": "Pending",
       "submittedAt": "2026-08-24 09:10",
       "requiresPayment": false
-    },
-    {
-      "id": "REQ-2026-002",
-      "requester": "Anna Villanueva",
-      "resourceId": "R-004",
-      "resourceName": "Multipurpose Hall",
-      "office": "Simbahayan",
-      "type": "Facility",
-      "date": "2026-08-28",
-      "start": "13:00",
-      "end": "16:00",
-      "purpose": "Community extension orientation",
-      "status": "For Payment",
-      "submittedAt": "2026-08-24 10:34",
-      "requiresPayment": true,
-      "paymentId": "PAY-001"
     },
     {
       "id": "REQ-2026-003",
@@ -181,14 +177,6 @@
     }
   ],
   "payments": [
-    {
-      "id": "PAY-001",
-      "reservationId": "REQ-2026-002",
-      "requester": "Anna Villanueva",
-      "amount": 1500,
-      "receipt": "receipt-REQ-2026-002.jpg",
-      "status": "Pending Verification"
-    },
     {
       "id": "PAY-002",
       "reservationId": "REQ-2026-003",
@@ -296,19 +284,65 @@
     }
   ],
   "offices": [
-    { "id": "OFF-EDTECH", "name": "EdTech", "status": "Active" },
-    { "id": "OFF-SIMBAHAYAN", "name": "Simbahayan", "status": "Active" },
-    { "id": "OFF-DOMINICAN", "name": "Dominican Residence", "status": "Active" },
-    { "id": "OFF-FACILITIES", "name": "Facilities Management", "status": "Active" },
-    { "id": "OFF-OSG", "name": "OSG", "status": "Active" }
+    {
+      "id": "OFF-EDTECH",
+      "name": "EdTech",
+      "status": "Active"
+    },
+    {
+      "id": "OFF-SIMBAHAYAN",
+      "name": "Simbahayan",
+      "status": "Active"
+    },
+    {
+      "id": "OFF-DOMINICAN",
+      "name": "Dominican Residence",
+      "status": "Active"
+    },
+    {
+      "id": "OFF-FACILITIES",
+      "name": "Facilities Management",
+      "status": "Active"
+    },
+    {
+      "id": "OFF-OSG",
+      "name": "OSG",
+      "status": "Active"
+    }
   ],
   "drivers": [
-    { "id": "DRV-001", "name": "Ramon Cruz", "licenseNumber": "N01-23-456789", "office": "Simbahayan", "phone": "0917-000-0001", "status": "Available" },
-    { "id": "DRV-002", "name": "Teresa Lim", "licenseNumber": "N02-34-567890", "office": "Dominican Residence", "phone": "0917-000-0002", "status": "Available" }
+    {
+      "id": "DRV-001",
+      "name": "Ramon Cruz",
+      "licenseNumber": "N01-23-456789",
+      "office": "Simbahayan",
+      "phone": "0917-000-0001",
+      "status": "Available"
+    },
+    {
+      "id": "DRV-002",
+      "name": "Teresa Lim",
+      "licenseNumber": "N02-34-567890",
+      "office": "Dominican Residence",
+      "phone": "0917-000-0002",
+      "status": "Available"
+    }
   ],
   "approvingBodies": [
-    { "id": "AB-001", "office": "Facilities Management", "bodyName": "Facilities Setup Desk", "description": "Reviews setup and maintenance readiness.", "status": "Active" },
-    { "id": "AB-002", "office": "OSG", "bodyName": "OSG Security Office", "description": "Reviews external visitor and security clearance.", "status": "Active" }
+    {
+      "id": "AB-001",
+      "office": "Facilities Management",
+      "bodyName": "Facilities Setup Desk",
+      "description": "Reviews setup and maintenance readiness.",
+      "status": "Active"
+    },
+    {
+      "id": "AB-002",
+      "office": "OSG",
+      "bodyName": "OSG Security Office",
+      "description": "Reviews external visitor and security clearance.",
+      "status": "Active"
+    }
   ],
   "approvalTemplates": [
     {
@@ -317,19 +351,13 @@
       "resourceType": "All",
       "status": "Active",
       "steps": [
-        { "id": "OWNER", "name": "Resource Owner Review", "office": "$OWNER", "sequence": 1, "condition": "always" }
-      ]
-    },
-    {
-      "id": "WF-VENUE",
-      "name": "Venue and Event Approval",
-      "resourceType": "Facility",
-      "status": "Active",
-      "steps": [
-        { "id": "OWNER", "name": "Venue Owner Review", "office": "$OWNER", "sequence": 1, "condition": "always" },
-        { "id": "FACILITIES", "name": "Facilities and Setup Review", "office": "Facilities Management", "sequence": 2, "condition": "setupRequired", "approvingBodyId": "AB-001" },
-        { "id": "OSG", "name": "External Guest and Security Review", "office": "OSG", "sequence": 2, "condition": "externalVisitors", "approvingBodyId": "AB-002" },
-        { "id": "PARKING", "name": "Visitor Parking Review", "office": "OSG", "sequence": 2, "condition": "parkingRequired", "approvingBodyId": "AB-002" }
+        {
+          "id": "OWNER",
+          "name": "Resource Owner Review",
+          "office": "$OWNER",
+          "sequence": 1,
+          "condition": "always"
+        }
       ]
     }
   ],
@@ -387,16 +415,11 @@
       "time": "Today 09:10"
     },
     {
-      "action": "Payment receipt uploaded",
-      "actor": "Anna Villanueva",
-      "target": "Multipurpose Hall",
-      "time": "Today 10:34"
-    },
-    {
       "action": "Visitor request approved",
       "actor": "OSG Admin",
       "target": "Manila Science High School",
       "time": "Yesterday 16:18"
     }
-  ]
+  ],
+  "reservationDrivers": []
 }

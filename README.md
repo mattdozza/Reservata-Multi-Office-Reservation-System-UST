@@ -44,6 +44,7 @@ These credentials exist only in the local mock identity provider. Before submiss
 | Super Admin | `all.offices.admin@ust.edu.ph` | `SuperAdmin2026!` |
 | OSG Admin | `osg.admin@ust.edu.ph` | `OsgAdmin2026!` |
 | Requester (Student Org Rep) | `cics.visitor.requester@ust.edu.ph` | `Visitor2026!` |
+RsvER6PpPhz!
 
 Requester accounts carry an affiliation (Student, Faculty, Staff, or Student Org Rep). Students may only browse and reserve Equipment resources and cannot access visitor requests; Faculty, Staff, and Student Org Rep requesters have full resource access plus the ability to submit and track visitor access requests.
 

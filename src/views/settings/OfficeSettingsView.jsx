@@ -12,7 +12,7 @@ import {
   MIN_PAYMENT_DEADLINE_HOURS
 } from "../../store/shared.js";
 
-const RESOURCE_TYPES = ["Facility", "Vehicle", "Equipment"];
+const RESOURCE_TYPES = ["Equipment", "Vehicle", "Visitor Service"];
 const RESOURCE_STATUSES = [
   "Available",
   "Reserved",

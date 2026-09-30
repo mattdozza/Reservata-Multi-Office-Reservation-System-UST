@@ -98,14 +98,6 @@ export default function App() {
     refresh();
   }
 
-  async function reset() {
-    const confirmed = window.confirm(
-      "Reset all local demonstration data to the original sample records?",
-    );
-    if (!confirmed) return;
-    await perform(() => store.reset(), "Demo data has been reset.");
-  }
-
   function reserve(resourceId, schedule = null) {
     setSelectedResourceId(resourceId);
     setSelectedSchedule(schedule);
@@ -142,7 +134,6 @@ export default function App() {
             store={store}
             onNavigate={navigate}
             onLogout={logout}
-            onReset={reset}
             onNotification={showNotifications}
           >
             <ViewRouter

@@ -22,7 +22,7 @@ function daysFromTodayIso(days) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
-test("venue workflow activates conditional reviews in parallel before payment", async () => {
+test("conditional workflow activates reviews in parallel before payment", async () => {
   const { buildApprovalSteps, decideApprovalStep } = await import("../src/domain/workflows.js");
   const template = {
     steps: [
@@ -99,7 +99,7 @@ test("office payment queue is scoped to the payment owner office", async () => {
       {
         id: "REQ-1",
         requester: "Student Body Requester",
-        resourceName: "Main Chapel",
+        resourceName: "Projector Set A",
         office: "Simbahayan",
         status: "For Payment",
         approvalSteps: [{ office: "Facilities Management", status: "Approved" }]
@@ -362,12 +362,12 @@ test("payment handoff snapshots the configured resource deadline window", async 
   store.applyAuthenticatedUser(store.localUser);
   store.setData({
     systemSettings: [{ id: "SYSTEM", paymentDeadlineHours: 24 }],
-    resources: [{ id: "R-PAID", name: "Training Room", type: "Facility", office: "EdTech", status: "Available", capacity: 40, requiresPayment: true, fee: 500, paymentDeadlineHours: 6, workflowTemplateId: "WF-BASIC" }],
+    resources: [{ id: "R-PAID", name: "Robot 01", type: "Equipment", office: "EdTech", status: "Available", capacity: 40, requiresPayment: true, fee: 500, paymentDeadlineHours: 6, workflowTemplateId: "WF-BASIC" }],
     reservations: [{
       id: "REQ-PAID",
       requester: "Student Body Requester",
       resourceId: "R-PAID",
-      resourceName: "Training Room",
+      resourceName: "Robot 01",
       office: "EdTech",
       date: daysFromTodayIso(3),
       start: "09:00",

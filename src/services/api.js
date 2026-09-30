@@ -1,6 +1,4 @@
 import { STORAGE_KEYS } from "../config.js";
-import { DEFAULT_DATA } from "../data/defaultData.js";
-import { clone } from "../shared/utils.js";
 
 const LOCAL_TOKEN_KEY = "reservata.localAccessToken.v1";
 
@@ -91,13 +89,6 @@ export async function markLocalNotificationsRead(id = null) {
 
 export async function createLocalUserAccount(person) {
   return parseResponse(await authenticatedFetch("/api/users", { method: "POST", body: JSON.stringify(person) }));
-}
-
-export async function resetDatabase(apiAvailable) {
-  localStorage.removeItem(STORAGE_KEYS.offlineData);
-  if (!apiAvailable) return clone(DEFAULT_DATA);
-  await parseResponse(await authenticatedFetch("/api/reset", { method: "POST" }));
-  return parseResponse(await authenticatedFetch("/api/state"));
 }
 
 export function loadSession() {

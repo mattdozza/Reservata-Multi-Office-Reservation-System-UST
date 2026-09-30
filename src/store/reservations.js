@@ -343,6 +343,7 @@ export const reservationMethods = {
       end,
       quantity,
       purpose,
+      driverChoice: resource.type === "Vehicle" ? (values.driverChoice || "Without Driver") : "Not applicable",
       ...requestDetails,
       status: "Under Owner Review",
       submittedAt: nowLabel(),

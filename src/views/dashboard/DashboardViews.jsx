@@ -144,7 +144,7 @@ function OfficeAdminDashboard({ store, onAction }) {
 function SuperAdminDashboard({ store, onNavigate }) {
   const activeResources = store.data.resources.filter((item) => item.status !== "Archived");
   const activeOffices = store.data.offices.filter((item) => item.status === "Active");
-  const resourceTypes = ["Facility", "Vehicle", "Equipment", "Visitor Service"].map((type) => ({
+  const resourceTypes = ["Equipment", "Vehicle", "Visitor Service"].map((type) => ({
     label: type,
     value: activeResources.filter((item) => item.type === type).length
   }));

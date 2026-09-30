@@ -14,7 +14,6 @@ import {
   LogOut,
   Package,
   PlusCircle,
-  RotateCcw,
   Search,
   Settings,
   ShieldCheck,
@@ -57,7 +56,7 @@ function navCount(store, view) {
   return 0;
 }
 
-export default function AppShell({ store, onNavigate, onLogout, onReset, onNotification, children }) {
+export default function AppShell({ store, onNavigate, onLogout, onNotification, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const user = store.currentUser;
   const navItems = navItemsFor(store.session.activeRole, user.requesterType);
@@ -105,11 +104,6 @@ export default function AppShell({ store, onNavigate, onLogout, onReset, onNotif
           <button className="ghost-button icon-text-button" onClick={onLogout} type="button">
             <LogOut aria-hidden="true" size={16} /> Sign out
           </button>
-          {store.session.activeRole === "superAdmin" && store.backendMode === "local" && (
-            <button className="danger-button icon-text-button" onClick={onReset} type="button">
-              <RotateCcw aria-hidden="true" size={16} /> Reset Demo Data
-            </button>
-          )}
         </div>
       </aside>
 

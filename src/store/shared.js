@@ -27,7 +27,6 @@ export function assetTagPrefix(office, type) {
     ? officeWords.map((word) => word.slice(0, 3)).join("").slice(0, 8)
     : officeWords[0].slice(0, 6);
   const typeCodes = {
-    Facility: "FAC",
     Vehicle: "VEH",
     Equipment: "EQP",
     "Visitor Service": "VIS"

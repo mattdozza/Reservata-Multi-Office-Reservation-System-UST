@@ -9,6 +9,7 @@ import {
   ReservationsView,
   ResourcesView
 } from "./reservations/ReservationViews.jsx";
+import { RequesterCalendarView } from "./reservations/RequesterCalendarView.jsx";
 import { OfficeSettingsView, WorkflowsView } from "./settings/SettingsViews.jsx";
 import {
   ArrivalsView,
@@ -25,7 +26,7 @@ export default function ViewRouter({ store, selectedResourceId, selectedSchedule
     resources: <ResourcesView {...props} />,
     newRequest: <NewReservationView {...props} selectedResourceId={selectedResourceId} selectedSchedule={selectedSchedule} />,
     myRequests: <ReservationsView {...props} />,
-    calendar: <CalendarView {...props} />,
+    calendar: store.session.activeRole === "requester" ? <RequesterCalendarView {...props} /> : <CalendarView {...props} />,
     notifications: <NotificationsView {...props} />,
     approvalQueue: <ApprovalsView {...props} />,
     eventReviews: <ApprovalsView {...props} />,

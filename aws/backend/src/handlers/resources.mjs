@@ -9,7 +9,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { photoCommand, savePhoto, validatePhotoOwner, validPhotoKey } from "../lib/resourcePhotos.mjs";
 
 const STATUSES = ["Available", "Reserved", "In Use", "Under Maintenance", "Unavailable"];
-const TYPES = ["Facility", "Vehicle", "Equipment", "Visitor Service"];
+const TYPES = ["Vehicle", "Equipment", "Visitor Service"];
 
 function normalizeAssetTag(value) {
   return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -21,7 +21,6 @@ function assetTagPrefix(office, type) {
     ? officeWords.map((word) => word.slice(0, 3)).join("").slice(0, 8)
     : officeWords[0].slice(0, 6);
   const typeCodes = {
-    Facility: "FAC",
     Vehicle: "VEH",
     Equipment: "EQP",
     "Visitor Service": "VIS"

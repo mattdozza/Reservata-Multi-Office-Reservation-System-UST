@@ -1277,16 +1277,6 @@ async function handleApi(request, response, url) {
     return;
   }
 
-  if (pathname === "/api/reset" && request.method === "POST") {
-    if (user.role !== "Super Admin") throw new HttpError(403, "Only a Super Admin can reset demonstration data.");
-    const defaultPath = path.join(ROOT, "data", "db.default.json");
-    const database = normalizeState(JSON.parse(fs.readFileSync(defaultPath, "utf8")));
-    expireOverdueReservations(database);
-    writeDatabase(database);
-    sendJson(response, 200, { ok: true, resetAt: new Date().toISOString() });
-    return;
-  }
-
   throw new HttpError(404, "API route not found.");
 }
 

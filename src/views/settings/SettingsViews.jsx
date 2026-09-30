@@ -7,7 +7,7 @@ import { MAX_PAYMENT_DEADLINE_HOURS, MIN_PAYMENT_DEADLINE_HOURS } from "../../st
 import { WORKFLOW_CONDITIONS } from "../../domain/workflows.js";
 export { OfficeSettingsView } from "./OfficeSettingsView.jsx";
 
-const RESOURCE_TYPES = ["Facility", "Vehicle", "Equipment"];
+const RESOURCE_TYPES = ["Equipment", "Vehicle", "Visitor Service"];
 
 function workflowDraft(template) {
   return template
