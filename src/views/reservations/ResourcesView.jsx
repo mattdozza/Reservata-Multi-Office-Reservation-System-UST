@@ -3,9 +3,10 @@ import ResourcePhoto from "../../components/ResourcePhoto.jsx";
 import { Badge } from "../../components/Common.jsx";
 import { sortBy, tomorrowIso } from "../../shared/utils.js";
 
-const RESOURCE_TYPES = ["All", "Equipment", "Vehicle", "Visitor Service"];
+const RESOURCE_TYPES = ["Equipment", "Vehicle", "Visitor Service"];
 const CATEGORY_ORDER = ["Equipment", "Vehicle", "Visitor Service"];
-const RESOURCE_STATUSES = ["All", "Available", "Reserved", "In Use", "Under Maintenance", "Unavailable", "Archived"];
+const RESOURCE_STATUS_FILTERS = ["Available", "Unavailable"];
+// Four columns by two rows per page.
 const RESOURCE_PAGE_SIZE = 8;
 
 export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
@@ -26,7 +27,7 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   const allowedTypes = role === "requester"
     ? (isStudent ? ["Equipment"] : ["Equipment", "Vehicle"])
     : null;
-  const typeTabs = allowedTypes ? ["All", ...allowedTypes] : RESOURCE_TYPES;
+  const typeOptions = allowedTypes ?? RESOURCE_TYPES;
 
   const resources = (() => {
     let items = [...store.data.resources];
@@ -35,7 +36,7 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
     const normalized = query.trim().toLowerCase();
     items = items.filter((item) => {
       const matchesType = filter === "All" || item.type === filter;
-      const matchesStatus = statusFilter === "All" || item.status === statusFilter;
+      const matchesStatus = statusFilter === "All" || (statusFilter === "Available" ? item.status === "Available" : item.status !== "Available");
       const matchesQuery = `${item.name} ${item.office} ${item.location} ${item.assetTag || ""} ${item.serialNumber || ""} ${(item.tags || []).join(" ")}`.toLowerCase().includes(normalized);
       return matchesType && matchesStatus && matchesQuery
         && (office === "All" || item.office === office)
@@ -70,6 +71,18 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   const pageCount = Math.max(1, Math.ceil(visible.length / RESOURCE_PAGE_SIZE));
   const activePage = Math.min(Math.max(page, 1), pageCount);
   const pagedItems = visible.slice((activePage - 1) * RESOURCE_PAGE_SIZE, activePage * RESOURCE_PAGE_SIZE);
+  const clearFilters = () => {
+    setOffice("All");
+    setCapacity("");
+    setPayment("All");
+    setSchedule({ date: "", start: "08:00", end: "09:00" });
+    setAvailabilityOnly(false);
+    setQuery("");
+    setFilter("All");
+    setStatusFilter("All");
+  };
+  const filtersActive = Boolean(query.trim()) || filter !== "All" || statusFilter !== "All" || office !== "All"
+    || Boolean(capacity) || payment !== "All" || availabilityOnly || Boolean(schedule.date);
   const groupedCategories = (() => {
     const extraTypes = [...new Set(pagedItems.map((item) => item.type))].filter((type) => !CATEGORY_ORDER.includes(type)).sort();
     return [...CATEGORY_ORDER, ...extraTypes]
@@ -80,16 +93,7 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
   return (
     <>
       <div className="toolbar">
-        {role !== "requester" && (
-          <div className="tabs" aria-label="Filter resources">
-            {typeTabs.map((item) => (
-              <button className={`tab ${filter === item ? "active" : ""}`} onClick={() => setFilter(item)} type="button" key={item}>
-                {item}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="toolbar-group">
+        <div className="toolbar-group resource-filter-bar">
           <input
             className="input resource-search"
             value={query}
@@ -97,14 +101,17 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
             placeholder="Search resources"
             aria-label="Search resources"
           />
-          {role === "requester" && !isStudent && (
-            <select className="select status-filter" value={office} onChange={(event) => setOffice(event.target.value)} aria-label="Filter by office">
-              <option value="All">All Offices</option>
-              {[...new Set(store.data.resources.map((item) => item.office))].sort().map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          )}
-          <select className="select status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter resource status">
-            {RESOURCE_STATUSES.map((item) => <option key={item}>{item}</option>)}
+          <select className="select resource-filter-select" value={office} onChange={(event) => setOffice(event.target.value)} aria-label="Filter by office">
+            <option value="All">All Offices</option>
+            {[...new Set(store.data.resources.map((item) => item.office))].sort().map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <select className="select resource-filter-select" value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter by type">
+            <option value="All">All Types</option>
+            {typeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className="select resource-filter-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter resource status">
+            <option value="All">All Statuses</option>
+            {RESOURCE_STATUS_FILTERS.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           {role !== "requester" && (
             <select className="select status-filter" value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort resources">
@@ -112,6 +119,9 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
               <option value="office">Sort by office</option>
               <option value="status">Sort by status</option>
             </select>
+          )}
+          {role !== "requester" && (
+            <button className="secondary-button" type="button" onClick={clearFilters} disabled={!filtersActive}>Clear filters</button>
           )}
           {role === "officeAdmin" && (
             <button className="primary-button" onClick={() => onNavigate("officeSettings")} type="button">
@@ -122,14 +132,12 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
       </div>
       {role !== "requester" && (
         <div className="resource-filter-panel">
-          <div className="field"><label htmlFor="browse-office">Office</label><select id="browse-office" className="select" value={office} onChange={(event) => setOffice(event.target.value)}><option>All</option>{[...new Set(store.data.resources.map((item) => item.office))].sort().map((name) => <option key={name}>{name}</option>)}</select></div>
           <div className="field"><label htmlFor="browse-capacity">Minimum capacity</label><input id="browse-capacity" className="input" type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} /></div>
           <div className="field"><label htmlFor="browse-payment">Payment</label><select id="browse-payment" className="select" value={payment} onChange={(event) => setPayment(event.target.value)}><option>All</option><option>Free</option><option>Paid</option></select></div>
           <div className="field"><label htmlFor="browse-date">Reservation date</label><input id="browse-date" className="input" type="date" min={tomorrowIso()} value={schedule.date} onChange={(event) => setSchedule((current) => ({ ...current, date: event.target.value }))} /></div>
           <div className="field"><label htmlFor="browse-start">Start time</label><input id="browse-start" className="input" type="time" value={schedule.start} onChange={(event) => setSchedule((current) => ({ ...current, start: event.target.value }))} /></div>
           <div className="field"><label htmlFor="browse-end">End time</label><input id="browse-end" className="input" type="time" value={schedule.end} onChange={(event) => setSchedule((current) => ({ ...current, end: event.target.value }))} /></div>
           <label className="check-field"><input type="checkbox" checked={availabilityOnly} disabled={!scheduleValid} onChange={(event) => setAvailabilityOnly(event.target.checked)} /><span>Available for this schedule only</span></label>
-          <button className="secondary-button" type="button" onClick={() => { setOffice("All"); setCapacity(""); setPayment("All"); setSchedule({ date: "", start: "08:00", end: "09:00" }); setAvailabilityOnly(false); setQuery(""); setFilter("All"); setStatusFilter("All"); }}>Clear filters</button>
           {schedule.date && !scheduleValid && <p className="field-error">Choose tomorrow or later, with an end time after the start time.</p>}
         </div>
       )}
@@ -139,7 +147,7 @@ export function ResourcesView({ store, onAction, onNavigate, onReserve }) {
             {group.type}
             <span>{group.items.length} {group.items.length === 1 ? "resource" : "resources"}</span>
           </h2>
-          <div className="grid four-col">
+          <div className="grid resource-grid">
             {group.items.map((resource) => (
               <article className="card resource-card" key={resource.id}>
                 <ResourcePhoto resource={resource} />

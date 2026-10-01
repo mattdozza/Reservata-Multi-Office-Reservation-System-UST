@@ -6,7 +6,7 @@ Use this checklist before presenting the application. Run `npm run check` first 
 
 The local API tests use a temporary database copy, not the running application's database. The browser checklist below remains manual; no end-to-end browser test runner has been added.
 
-1. As an Office Admin, open Office Settings and create or edit a resource. Select a JPG, PNG, or WebP up to 5 MB. Check the preview, save, reopen, and confirm the photo persists. Remove the photo and confirm the placeholder returns.
+1. As an Office Admin, open Resource Management and create or edit a resource. Select a JPG, PNG, or WebP up to 5 MB. Check the preview, save, reopen, and confirm the photo persists. Remove the photo and confirm the placeholder returns.
 2. As a requester, combine office, minimum capacity, payment, and schedule filters. Confirm the selected resource photo appears in both browsing and the reservation form. A failed availability check must not enable submission.
 3. Enter a reservation purpose and schedule, then navigate away. Cancel the unsaved-change warning to stay; accept it to leave. Return or refresh and confirm the draft is restored. Another account must not see it. Discard removes it; successful submission also clears it.
 4. Submit an invalid form and confirm field feedback. During saving, repeated clicks must not send another action. On receipt upload failure, the selected file stays available for retry.
@@ -368,7 +368,7 @@ Expected result:
 
 Steps:
 
-1. Sign in as an Office Admin and open Office Settings.
+1. Sign in as an Office Admin and open Resource Management.
 2. Add a resource and confirm the asset tag is generated automatically.
 3. Edit the suggested asset tag if the office needs a specific inventory code, then add an optional serial number, comma-separated labels, and a workflow assignment.
 4. Edit its status, capacity, fee, payment window, asset tag, labels, or workflow.

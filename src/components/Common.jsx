@@ -44,11 +44,39 @@ export function Metrics({ items, columns = "metrics-grid" }) {
   );
 }
 
-export function ChartSummary({ title, items }) {
+export function StatusTiles({ title, subtitle, items }) {
+  return (
+    <article className="card summary-card">
+      <CardHeader title={title} subtitle={subtitle} />
+      <div className="summary-tiles">
+        {items.map((item) => (
+          <div className="summary-tile" style={{ "--metric-color": item.color }} key={item.label}>
+            <strong>{item.value}</strong>
+            <small>{item.label}</small>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+export function AvailabilityLegend({ label = "" }) {
+  return (
+    <div className="availability-legend">
+      {label && <span className="availability-legend-title">{label}</span>}
+      <ul>
+        <li><span className="availability-swatch available" aria-hidden="true" />Available</li>
+        <li><span className="availability-swatch unavailable" aria-hidden="true" />Unavailable</li>
+      </ul>
+    </div>
+  );
+}
+
+export function ChartSummary({ title, subtitle, items }) {
   const max = Math.max(1, ...items.map((item) => Number(item.value) || 0));
   return (
     <article className="card chart-card">
-      <CardHeader title={title} />
+      <CardHeader title={title} subtitle={subtitle} />
       <div className="chart-list">
         {items.map((item) => (
           <div className="chart-row" key={item.label}>
@@ -476,17 +504,31 @@ export function ApprovalTrail({ reservation, compact = false }) {
   );
 }
 
-export function ResourceMiniRows({ items }) {
+export function ResourceMiniRows({ items, onSelect }) {
   if (!items.length) return <EmptyState>No resources found.</EmptyState>;
-  return items.map((item) => (
-    <div className="list-item" key={item.id}>
-      <div>
+  return items.map((item) => {
+    const body = (
+      <>
+        <div>
+          <h3 className="item-title">{item.name}</h3>
+          <p>{item.type} · {item.office}</p>
+        </div>
         <Badge status={item.status} />
-        <h3 className="item-title">{item.name}</h3>
-        <p>{item.type} · {item.office}</p>
-      </div>
-    </div>
-  ));
+      </>
+    );
+    if (!onSelect) return <div className="list-item resource-mini-row" key={item.id}>{body}</div>;
+    return (
+      <button
+        className="list-item resource-mini-row resource-mini-button"
+        onClick={() => onSelect(item)}
+        aria-label={`Request ${item.name}, ${item.type} at ${item.office}`}
+        type="button"
+        key={item.id}
+      >
+        {body}
+      </button>
+    );
+  });
 }
 
 export function ActivityRows({ store, limit = 50 }) {

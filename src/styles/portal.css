@@ -24,16 +24,6 @@
   color: var(--blue);
 }
 
-.draft-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0 20px;
-  font-size: 13px;
-}
-
 .resource-photo {
   width: 100%;
   aspect-ratio: 4 / 3;
@@ -703,6 +693,28 @@
   color: #b3b7bf;
 }
 
+/* Per-day resource availability tint (admin calendar, one resource selected) */
+.view-root[data-view="calendar"] .admin-calendar .calendar-button.day-available {
+  background: #f7fcf9;
+}
+
+.view-root[data-view="calendar"] .admin-calendar .calendar-button.day-unavailable {
+  background: #fff7f6;
+}
+
+.view-root[data-view="calendar"] .admin-calendar .calendar-button.day-available:hover {
+  background: #eef8f2;
+}
+
+.view-root[data-view="calendar"] .admin-calendar .calendar-button.day-unavailable:hover {
+  background: #fdefee;
+}
+
+.view-root[data-view="calendar"] .admin-calendar .calendar-button.day-available.selected,
+.view-root[data-view="calendar"] .admin-calendar .calendar-button.day-unavailable.selected {
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
 .view-root[data-view="calendar"] :is(.requester-calendar, .admin-calendar) .calendar-pill {
   margin-top: 5px;
   border-radius: 5px;
@@ -911,6 +923,57 @@
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+/* Browse resources: four columns by two rows */
+.view-root .resource-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Unified browse filters: search, office, type, status */
+.view-root .resource-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.view-root .resource-filter-bar .resource-search {
+  flex: none;
+  width: auto;
+}
+
+.view-root .resource-filter-bar .resource-filter-select {
+  width: auto;
+}
+
+.view-root .resource-filter-bar .status-filter {
+  width: auto;
+}
+
+.view-root .resource-filter-bar :is(.secondary-button, .primary-button) {
+  width: auto;
+  align-self: center;
+  white-space: nowrap;
+}
+
+@container (max-width: 960px) {
+  .view-root .resource-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .view-root .resource-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 620px) {
+  .view-root .resource-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .view-root .resource-filter-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Browse resources pagination */

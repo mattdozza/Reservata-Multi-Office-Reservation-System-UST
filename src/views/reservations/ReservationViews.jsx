@@ -4,12 +4,13 @@ import ReservationTimeline from "../../components/ReservationTimeline.jsx";
 import { readReservationDraft, reservationDraftKey } from "../../domain/reservations/drafts.js";
 import { MONTH_LABELS, monthCells, shiftMonth, WEEKDAY_LABELS } from "../../domain/reservations/requesterCalendar.js";
 import { reservationErrors } from "../../domain/reservations/validation.js";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
-import { ApprovalTrail, Badge, CardHeader, ConfirmModal, DetailGrid, DetailModal, EmptyState, ReceiptPreview, ReservationRows } from "../../components/Common.jsx";
+import { ApprovalTrail, AvailabilityLegend, Badge, CardHeader, ConfirmModal, DetailGrid, DetailModal, EmptyState, ReceiptPreview, ReservationRows } from "../../components/Common.jsx";
 import { VISITOR_CAPABLE_REQUESTER_TYPES } from "../../config.js";
-import { compareDateTime, displayTimestamp, downloadCsv, formatDate, sortBy, todayIso, tomorrowIso } from "../../shared/utils.js";
-import { buildApprovalSteps, pendingApprovalSteps } from "../../domain/workflows.js";
+import { compareDateTime, displayTimestamp, downloadCsv, formatDate, formatTime, sortBy, todayIso, tomorrowIso } from "../../shared/utils.js";
+import { pendingApprovalSteps } from "../../domain/workflows.js";
+import { BLOCKING_RESERVATION_STATUSES } from "../../store/shared.js";
 import { VisitorRows } from "../visitors/VisitorViews.jsx";
 export { ResourcesView } from "./ResourcesView.jsx";
 
@@ -32,12 +33,10 @@ function approvalSuccessMessage(reservation, stepId) {
 
 export function NewReservationView({ store, selectedResourceId, selectedSchedule, onAction, onNavigate }) {
   const draftKey = reservationDraftKey(store.currentUser.email);
-  const [restored, setRestored] = useState(() => readReservationDraft(draftKey));
+  const [restored] = useState(() => readReservationDraft(draftKey));
   const [draftChanged, setDraftChanged] = useState(false);
-  const [draftError, setDraftError] = useState("");
   const [purpose, setPurpose] = useState(restored?.purpose || "");
   const [showErrors, setShowErrors] = useState(false);
-  const [draftVersion, setDraftVersion] = useState(0);
   const allowedTypes = store.currentUser.requesterType === "Student" ? ["Equipment"] : ["Equipment", "Vehicle"];
   const available = store.data.resources.filter(
     (item) => allowedTypes.includes(item.type)
@@ -55,31 +54,21 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
     if (!draftChanged) return;
     try {
       localStorage.setItem(draftKey, JSON.stringify({ resourceId, slot, requirements, purpose, driverChoice }));
-      setDraftError("");
-    } catch { setDraftError("Draft could not be saved on this device. Keep this page open until you submit."); }
+    } catch { /* Draft persistence is best effort; the unsaved-changes guard still protects the form. */ }
   }, [draftChanged, draftKey, resourceId, slot, requirements, purpose]);
 
-  function discardDraft() {
-    if (!window.confirm("Discard this reservation draft?")) return;
-    localStorage.removeItem(draftKey);
-    setDraftChanged(false); setRestored(null); setPurpose(""); setShowErrors(false);
-    setResourceId(selectedResourceId || available[0]?.id || "");
-    setSlot({ date: tomorrowIso(), start: "08:00", end: "09:00", quantity: "1" });
-    setRequirements(Object.fromEntries(requirementOptions.map((option) => [option.id, false])));
-    setDriverChoice("Without Driver");
-    setDraftVersion((value) => value + 1);
-  }
   const template = store.data.approvalTemplates.find((item) => item.id === selected?.workflowTemplateId && item.status === "Active")
     || store.data.approvalTemplates.find((item) => item.id === "WF-BASIC");
   const hasConditionalSteps = (template?.steps || []).some((step) => step.condition && step.condition !== "always");
-  const previewSteps = selected ? buildApprovalSteps(template, selected, requirements, "PREVIEW") : [];
   const localAvailability = store.resourceAvailability(resourceId, slot.date, slot.start, slot.end);
   const [remoteAvailability, setRemoteAvailability] = useState(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const availability = remoteAvailability || localAvailability;
   const slotOptions = availability.slots?.length ? availability.slots : store.reservationSlotOptions(resourceId, slot.date, slot.start, slot.end);
-  const alternatives = availability.alternatives || [];
-  const upcoming = resourceId ? store.upcomingReservations(resourceId, 5) : [];
+  const dateTooEarly = Boolean(slot.date) && slot.date < tomorrowIso();
+  const dateMissing = !slot.date || dateTooEarly;
+  const earliestDate = formatDate(tomorrowIso());
+  const slotScheduleDate = slotOptions[0]?.date || slot.date;
 
   useEffect(() => {
     setRequirements((current) => ({
@@ -129,9 +118,7 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
 
   return (
     <div className="grid two-col">
-      <ManagedForm className="card form-card" onSubmit={submit} resetKey={draftVersion} onChange={() => setDraftChanged(true)}>
-        {draftChanged && <div className="draft-notice"><span>{draftError || "Draft saved on this device. Not submitted."}</span><button type="button" className="secondary-button" onClick={discardDraft}>Discard draft</button></div>}
-        {!selected && (draftChanged || restored) && <p className="field-error" role="alert">The saved resource is no longer available. Select another resource.</p>}
+      <ManagedForm className="card form-card" onSubmit={submit} onChange={() => setDraftChanged(true)}>
         <div className="form-grid">
           <div className="field span-2">
             <label htmlFor="resourceId">Resource</label>
@@ -144,10 +131,14 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
               ))}
             </select>
           </div>
-          <div className="field"><label htmlFor="date">Date</label><input id="date" name="date" className="input" type="date" min={tomorrowIso()} value={slot.date} onChange={(event) => updateSlot("date", event.target.value)} required /></div>
-          <div className="field"><label htmlFor="quantity">Quantity</label><input id="quantity" name="quantity" className="input" type="number" min="1" max={selected?.capacity || undefined} value={slot.quantity} onChange={(event) => updateSlot("quantity", event.target.value)} /></div>
+          <div className="field span-2">
+            <label htmlFor="date">Date</label>
+            <input id="date" name="date" className="input" type="date" min={tomorrowIso()} value={slot.date} onChange={(event) => updateSlot("date", event.target.value)} required />
+            {dateTooEarly && <small className="field-error">Showing slots for the earliest valid date instead: {formatDate(tomorrowIso())}.</small>}
+          </div>
           <div className="field"><label htmlFor="start">Start time</label><input id="start" name="start" className="input" type="time" value={slot.start} onChange={(event) => updateSlot("start", event.target.value)} required /></div>
           <div className="field"><label htmlFor="end">End time</label><input id="end" name="end" className="input" type="time" value={slot.end} onChange={(event) => updateSlot("end", event.target.value)} required /></div>
+          <div className="field span-2"><label htmlFor="quantity">Quantity</label><input id="quantity" name="quantity" className="input" type="number" min="1" max={selected?.capacity || undefined} value={slot.quantity} onChange={(event) => updateSlot("quantity", event.target.value)} /></div>
           {selected?.type === "Vehicle" && (
             <div className="field">
               <label htmlFor="driverChoice">Driver</label>
@@ -177,14 +168,17 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
         </div>
         {showErrors && Object.entries(errors).filter(([field]) => field !== "purpose").map(([field, message]) => <p className="field-error" key={field}><a href={`#${field}`}>{message}</a></p>)}
         {slot.start >= slot.end && <p className="field-error" role="alert">End time must be after start time.</p>}
-        <div className="split-actions form-actions"><button className="primary-button" type="submit" disabled={!selected || checkingAvailability || availability.status !== "available"}>{checkingAvailability ? "Checking availability..." : "Submit Request"}</button></div>
+        <div className="split-actions form-actions request-submit-actions"><button className="primary-button" type="submit" disabled={!selected || checkingAvailability || availability.status !== "available"}>{checkingAvailability ? "Checking availability..." : "Submit Request"}</button></div>
+        {dateMissing && <p className="submit-hint">Pick a date on or after {earliestDate} to continue.</p>}
       </ManagedForm>
       <aside className="stack">
         <section className="card">
-          <div className={`availability-panel availability-${availability.status}`}>
-            <Badge status={availability.status === "available" ? "Available" : availability.status === "conflict" ? "Unavailable" : "Pending"}>
-              {availability.status}
-            </Badge>
+          <div className={`availability-panel ${selected ? `availability-${availability.status}` : ""}`}>
+            {selected && (
+              <Badge status={availability.status === "available" ? "Available" : availability.status === "conflict" ? "Unavailable" : "Pending"}>
+                {availability.status}
+              </Badge>
+            )}
             <strong>{availability.message}</strong>
             {checkingAvailability && <p>Checking latest availability...</p>}
             <p>Earliest allowed date: {formatDate(tomorrowIso())}</p>
@@ -193,7 +187,7 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
             ))}
           </div>
           <div className="slot-schedule">
-            <h3>{formatDate(slot.date)} time slots</h3>
+            <h3>{formatDate(slotScheduleDate)} time slots</h3>
             <div className="slot-grid">
               {slotOptions.map((option) => {
                 const selectedSlot = option.date === slot.date && option.start === slot.start && option.end === slot.end;
@@ -205,45 +199,13 @@ export function NewReservationView({ store, selectedResourceId, selectedSchedule
                     onClick={() => selectSlot(option)}
                     type="button"
                   >
-                    <span>{option.start}-{option.end}</span>
-                    <small>{option.status}</small>
+                    <span>{formatTime(option.start)}–{formatTime(option.end)}</span>
+                    <small>{option.status === "available" ? "Available" : "Booked"}</small>
                   </button>
                 );
               })}
             </div>
-          </div>
-          {availability.status !== "available" && (
-            <div className="slot-schedule">
-              <h3>Suggested alternatives</h3>
-              {alternatives.length ? (
-                <div className="slot-grid">
-                  {alternatives.map((option) => (
-                    <button
-                      className="slot-option slot-available"
-                      key={`alt-${option.date}-${option.start}-${option.end}`}
-                      onClick={() => selectSlot(option)}
-                      type="button"
-                    >
-                      <span>{formatDate(option.date)}</span>
-                      <small>{option.start}-{option.end}</small>
-                    </button>
-                  ))}
-                </div>
-              ) : <p className="slot-note">No alternatives are available in the next listed booking window.</p>}
-            </div>
-          )}
-          <div className="mini-schedule">
-            <h3>Upcoming bookings</h3>
-            {upcoming.length ? upcoming.map((item) => (
-              <p key={item.id}>{formatDate(item.date)} {item.start}-{item.end} · {item.resourceName} · {item.status}</p>
-            )) : <p>No upcoming bookings for this resource.</p>}
-          </div>
-        </section>
-        <section className="card">
-          <CardHeader title={template?.name || "Approval route"} subtitle="Generated from the selected resource and requirements." />
-          <div className="timeline">
-            {previewSteps.map((step) => <div className="timeline-item" key={step.id}><strong>{step.name}</strong><small>{step.office} · Sequence {step.sequence}</small></div>)}
-            {selected?.requiresPayment && <div className="timeline-item"><strong>Payment verification</strong><small>{selected.office} · after operational approvals</small></div>}
+            <AvailabilityLegend />
           </div>
         </section>
         {selected?.requiresPayment && (
@@ -767,6 +729,17 @@ export function CalendarView({ store, onAction }) {
     .sort((left, right) => compareDateTime(left.date, left.start, right.date, right.start));
   const dayEvents = events.filter((item) => item.date === selectedDate);
   const statusOptions = ["All", ...new Set(store.data.reservations.map((item) => item.status))];
+  // Availability is only meaningful for one resource at a time; "All" mixes every resource together.
+  const bookedDays = useMemo(() => {
+    const booked = new Set();
+    if (resourceId === "All") return booked;
+    for (const item of store.data.reservations) {
+      if (item.resourceId === resourceId && BLOCKING_RESERVATION_STATUSES.includes(item.status)) booked.add(item.date);
+    }
+    return booked;
+  }, [resourceId, store.data.reservations]);
+  const showAvailability = resourceId !== "All";
+  const dayAvailabilityClass = (date) => (showAvailability ? (bookedDays.has(date) ? "day-unavailable" : "day-available") : "");
 
   return (
     <div className="grid calendar-layout admin-calendar">
@@ -804,7 +777,7 @@ export function CalendarView({ store, onAction }) {
             }
             const eventsForDay = events.filter((item) => item.date === cell.date);
             return (
-              <button className={`calendar-day calendar-button ${cell.date === selectedDate ? "selected" : ""}`} onClick={() => setSelectedDate(cell.date)} type="button" key={cell.key}>
+              <button className={`calendar-day calendar-button ${dayAvailabilityClass(cell.date)} ${cell.date === selectedDate ? "selected" : ""}`} onClick={() => setSelectedDate(cell.date)} type="button" key={cell.key}>
                 <strong>{cell.day}</strong>
                 {eventsForDay.slice(0, 3).map((event) => (
                   <span className={`event-pill calendar-pill ${statusTone(event.status)}`} key={event.id}>{event.resourceName}</span>
@@ -825,6 +798,12 @@ export function CalendarView({ store, onAction }) {
             </li>
           ))}
         </ul>
+        {showAvailability && (
+          <>
+            <div className="calendar-side-divider" />
+            <AvailabilityLegend label="Resource availability" />
+          </>
+        )}
         <div className="calendar-side-divider" />
         <h2 className="calendar-side-title">Selected Day</h2>
         <p className="calendar-side-summary">

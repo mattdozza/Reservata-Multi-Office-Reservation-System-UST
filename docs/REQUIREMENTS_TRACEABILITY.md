@@ -15,7 +15,7 @@
 | Payment receipt upload | Upload Receipt simulation in My Requests |
 | Payment verification | Payment Verification screen |
 | Notifications | Alerts screen and notification count |
-| Admin resource management | Office Settings add/edit/status/workflow/archive controls scoped to the owning office |
+| Admin resource management | Resource Management add/edit/status/workflow/archive controls scoped to the owning office |
 | Super Admin user management | Users & Roles role and account access controls |
 | Office coverage management | Office Management add/edit/status/archive and Coverage screens |
 | Approval workflow maintenance | Super Admin Approval Workflows editor for ordered, parallel, and conditional steps |

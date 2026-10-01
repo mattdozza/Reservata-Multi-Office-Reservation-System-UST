@@ -50,7 +50,7 @@ Requester submission
 
 ### Office Admin
 
-1. Opens Office Settings.
+1. Opens Resource Management.
 2. Adds or edits resources owned by the assigned office.
 3. Maintains resource asset tag, serial number, searchable labels, type, location, capacity, availability, fee, payment-window override, and approval-workflow assignment.
 4. Archives records instead of physically deleting them, preserving reservation and audit references.
@@ -93,7 +93,7 @@ OSG visitor processing is separate from reservation Event Reviews. Event Reviews
 | Role | Allowed Screens | Data And Maintenance Scope |
 | --- | --- | --- |
 | Requester | Home, Browse Resources, New Request, My Requests, Calendar, Alerts, Profile, plus New Visitor Request and My Visitor Requests for Faculty/Staff/Student Org Rep affiliations | Own requests, receipts, and alerts; Students are limited to Equipment resources and cannot access visitor requests |
-| Office Admin | Dashboard, Approvals, Payments, Resources, Office Settings, Calendar, Activity, Profile | Assigned approval steps, owned-office payments and resources |
+| Office Admin | Dashboard, Approvals, Payments, Resources, Resource Management, Calendar, Activity, Profile | Assigned approval steps, owned-office payments and resources |
 | Super Admin | Dashboard, Offices, Users & Roles, Approval Workflows, Coverage, Calendar, Activity, Profile | System configuration, reporting, and requester affiliation assignment |
 | OSG Admin | Dashboard, Visitor Requests, Event Reviews, Parking, Arrivals, Records, Activity, Profile | OSG steps and visitor operations |
 

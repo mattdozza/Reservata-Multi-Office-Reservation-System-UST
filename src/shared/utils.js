@@ -15,6 +15,14 @@ export function formatDate(value) {
   });
 }
 
+export function formatTime(value) {
+  if (!value) return "";
+  const [hours, minutes] = String(value).split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return String(value);
+  const suffix = hours >= 12 ? "PM" : "AM";
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${suffix}`;
+}
+
 export function todayIso() {
   const date = new Date();
   const offset = date.getTimezoneOffset() * 60_000;
