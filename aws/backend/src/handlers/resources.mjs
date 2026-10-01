@@ -10,6 +10,42 @@ import { photoCommand, savePhoto, validatePhotoOwner, validPhotoKey } from "../l
 
 const STATUSES = ["Available", "Reserved", "In Use", "Under Maintenance", "Unavailable"];
 const TYPES = ["Vehicle", "Equipment", "Visitor Service"];
+const OFFICE_RESOURCE_TYPES = {
+  EdTech: ["Equipment"],
+  Simbahayan: ["Vehicle"],
+  "Dominican Residence": ["Vehicle"],
+  OSG: ["Visitor Service"]
+};
+
+function todayIso() {
+  const date = new Date();
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function toMinutes(value) {
+  const [hours, minutes] = String(value || "").split(":").map(Number);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function validateOperatingHours(openTime, closeTime) {
+  if (openTime && toMinutes(openTime) === null) throw new HttpError(400, "Open time must be a valid time.");
+  if (closeTime && toMinutes(closeTime) === null) throw new HttpError(400, "Close time must be a valid time.");
+  if (openTime && closeTime && toMinutes(openTime) >= toMinutes(closeTime)) {
+    throw new HttpError(400, "Open time must be earlier than close time.");
+  }
+}
+
+function normalizeBlockedDates(value) {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return source
+    .map((item) => ({ date: String(item?.date || "").trim(), reason: String(item?.reason || "").trim().slice(0, 140) }))
+    .filter((item) => item.date && !seen.has(item.date) && seen.add(item.date))
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(0, 200);
+}
 
 function normalizeAssetTag(value) {
   return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -159,12 +195,17 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       const body = parseBody(event);
       requireFields(body, ["name", "type", "location", "capacity"]);
       if (!TYPES.includes(body.type)) throw new HttpError(400, "Unsupported resource type.");
+      const allowedTypes = OFFICE_RESOURCE_TYPES[user.office];
+      if (allowedTypes && !allowedTypes.includes(body.type)) {
+        throw new HttpError(400, `${user.office} can only manage ${allowedTypes.join(" or ")} resources.`);
+      }
       const resources = await repo.scan(TABLES.resources);
       const assetTag = normalizeAssetTag(body.assetTag || generateAssetTag(resources, user.office, body.type));
       assertUniqueAssetTag(resources, assetTag);
       const workflowTemplateId = body.workflowTemplateId || "WF-BASIC";
       const workflow = await repo.get(TABLES.approvalWorkflows, { id: workflowTemplateId });
       if (!workflow || workflow.status !== "Active") throw new HttpError(400, "Select an active approval workflow.");
+      validateOperatingHours(body.openTime, body.closeTime);
       const createdAt = now();
       const resource = {
         photoKey: validatePhotoOwner(body.photoKey, user),
@@ -182,6 +223,9 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         fee: body.requiresPayment ? Number(body.fee || 0) : 0,
         paymentDeadlineHours: body.requiresPayment ? paymentDeadlineHoursFrom(body.paymentDeadlineHours) : null,
         driver: body.driver || "Not applicable",
+        openTime: String(body.openTime || "").trim(),
+        closeTime: String(body.closeTime || "").trim(),
+        blockedDates: normalizeBlockedDates(body.blockedDates).filter((item) => item.date >= todayIso()),
         workflowTemplateId,
         createdAt,
         updatedAt: createdAt
@@ -224,10 +268,23 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         fee: body.requiresPayment === false ? 0 : body.fee === undefined ? undefined : Number(body.fee),
         paymentDeadlineHours: body.requiresPayment === false ? null : body.paymentDeadlineHours === undefined ? undefined : paymentDeadlineHoursFrom(body.paymentDeadlineHours),
         driver: body.driver,
+        openTime: body.openTime === undefined ? undefined : String(body.openTime || "").trim(),
+        closeTime: body.closeTime === undefined ? undefined : String(body.closeTime || "").trim(),
+        blockedDates: body.blockedDates === undefined ? undefined : normalizeBlockedDates(body.blockedDates),
         workflowTemplateId: body.workflowTemplateId,
         updatedAt
       };
       if (changes.type && !TYPES.includes(changes.type)) throw new HttpError(400, "Unsupported resource type.");
+      if (changes.type) {
+        const allowedTypes = OFFICE_RESOURCE_TYPES[user.office];
+        if (allowedTypes && !allowedTypes.includes(changes.type)) {
+          throw new HttpError(400, `${user.office} can only manage ${allowedTypes.join(" or ")} resources.`);
+        }
+      }
+      validateOperatingHours(
+        changes.openTime === undefined ? resource.openTime : changes.openTime,
+        changes.closeTime === undefined ? resource.closeTime : changes.closeTime
+      );
       const action = body.status === "Archived" ? "Resource archived" : statusOnly ? "Resource status updated" : "Resource updated";
       const updated = await repo.update(TABLES.resources, { id: resource.id }, changes, {
         ConditionExpression: "office = :office",

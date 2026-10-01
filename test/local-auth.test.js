@@ -153,7 +153,7 @@ test("resource photos are stored privately and limited to the resource office", 
       const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: account[0], password: account[1] }) });
       return { Authorization: `Bearer ${(await response.json()).token}`, "Content-Type": "application/json" };
     };
-    const admin = await login(ACCOUNTS[1]);
+    const admin = await login(["edtech.admin@ust.edu.ph", "EdTech2026!", "Office Admin"]);
     const requester = await login(ACCOUNTS[0]);
     const otherOffice = await login(ACCOUNTS[5]);
     const data = "data:image/jpeg;base64,/9j/2Q==";
@@ -166,7 +166,7 @@ test("resource photos are stored privately and limited to the resource office", 
     photoPath = path.join(__dirname, "..", "data", "resource-photos", key);
     assert.equal((await fetch(`${base}/api/resource-photos/${key}`, { headers: requester })).status, 404);
     const state = await (await fetch(`${base}/api/state`, { headers: admin })).json();
-    const resource = state.resources.find((item) => item.status === "Available" && item.type === "Equipment");
+    const resource = state.resources.find((item) => item.status === "Available");
     assert.ok(resource);
     resource.photoKey = key;
     const saved = await fetch(`${base}/api/state`, { method: "PUT", headers: admin, body: JSON.stringify(state) });

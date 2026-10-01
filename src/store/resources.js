@@ -1,7 +1,18 @@
 import { awsApi } from "../services/awsApi.js";
-import { nextId } from "../shared/utils.js";
+import { nextId, todayIso } from "../shared/utils.js";
 import { uploadResourcePhoto } from "../services/resourcePhotos.js";
-import { BLOCKING_RESERVATION_STATUSES, generateAssetTag, normalizeAssetTag, normalizeResourceTags, requirePaymentDeadlineHours, validPositiveNumber } from "./shared.js";
+import { allowedResourceTypes, BLOCKING_RESERVATION_STATUSES, generateAssetTag, normalizeAssetTag, normalizeBlockedDates, normalizeResourceTags, requirePaymentDeadlineHours, toMinutes, validPositiveNumber } from "./shared.js";
+
+function normalizeOperatingHours(values, existing) {
+  const openTime = values.openTime === undefined ? existing?.openTime || "" : String(values.openTime || "").trim();
+  const closeTime = values.closeTime === undefined ? existing?.closeTime || "" : String(values.closeTime || "").trim();
+  if (openTime && toMinutes(openTime) === null) throw new Error("Open time must be a valid time.");
+  if (closeTime && toMinutes(closeTime) === null) throw new Error("Close time must be a valid time.");
+  if (openTime && closeTime && toMinutes(openTime) >= toMinutes(closeTime)) {
+    throw new Error("Open time must be earlier than close time.");
+  }
+  return { openTime, closeTime };
+}
 
 export const resourceMethods = {
   get officeResources() {
@@ -34,12 +45,17 @@ export const resourceMethods = {
       throw new Error("Resource name and location are required.");
     }
     const type = values.type || existing?.type || "Equipment";
+    const allowedTypes = allowedResourceTypes(this.officeScope);
+    if (allowedTypes && !allowedTypes.includes(type)) {
+      throw new Error(`${this.officeScope} can only manage ${allowedTypes.join(" or ")} resources.`);
+    }
     const assetTag = normalizeAssetTag(values.assetTag || generateAssetTag(this.data.resources, this.officeScope, type, existing?.id));
     if (this.data.resources.some((item) => item.id !== existing?.id && normalizeAssetTag(item.assetTag) === assetTag)) {
       throw new Error("Asset tag must be unique.");
     }
     const template = this.data.approvalTemplates.find((item) => item.id === values.workflowTemplateId && item.status === "Active");
     if (!template) throw new Error("Select an active approval workflow.");
+    const { openTime, closeTime } = normalizeOperatingHours(values, existing);
     let photoKey = values.photoKey ?? existing?.photoKey ?? "";
     if (values.photoData) photoKey = (await uploadResourcePhoto(values.photoData)).key;
     const resource = {
@@ -61,6 +77,9 @@ export const resourceMethods = {
         ? requirePaymentDeadlineHours(values.paymentDeadlineHours, "Payment window")
         : null,
       driver: values.type === "Vehicle" ? (values.driver || "Without Driver") : "Not applicable",
+      openTime,
+      closeTime,
+      blockedDates: normalizeBlockedDates(existing ? existing.blockedDates : values.blockedDates).filter((item) => item.date >= todayIso()),
       workflowTemplateId: template.id
     };
     if (existing) Object.assign(existing, resource);
@@ -69,6 +88,39 @@ export const resourceMethods = {
     await this.save(
       () => existing ? awsApi.updateResource(resource.id, resource) : awsApi.createResource(resource),
       previousData
+    );
+  },
+
+  async blockResourceDate(id, date, reason = "") {
+    this.requireRole("officeAdmin");
+    const resource = this.data.resources.find((item) => item.id === id);
+    if (!resource) throw new Error("Resource not found.");
+    this.requireOfficeRecord(resource);
+    const cleanDate = String(date || "").trim();
+    if (!cleanDate || cleanDate < todayIso()) throw new Error("Choose a valid upcoming date to block.");
+    if ((resource.blockedDates || []).some((item) => item.date === cleanDate)) {
+      throw new Error("That date is already blocked.");
+    }
+    const previousData = this.snapshot();
+    resource.blockedDates = normalizeBlockedDates([...(resource.blockedDates || []), { date: cleanDate, reason }]);
+    this.addActivity("Resource date blocked", this.currentUser.name, `${resource.name}: ${cleanDate}${reason ? ` (${reason})` : ""}`);
+    await this.save(() => awsApi.updateResource(id, { blockedDates: resource.blockedDates }), previousData);
+  },
+
+  async unblockResourceDate(id, date) {
+    this.requireRole("officeAdmin");
+    const resource = this.data.resources.find((item) => item.id === id);
+    if (!resource) throw new Error("Resource not found.");
+    this.requireOfficeRecord(resource);
+    const previousData = this.snapshot();
+    resource.blockedDates = (resource.blockedDates || []).filter((item) => item.date !== date);
+    this.addActivity("Resource date unblocked", this.currentUser.name, `${resource.name}: ${date}`);
+    await this.save(() => awsApi.updateResource(id, { blockedDates: resource.blockedDates }), previousData);
+  },
+
+  resourceReservationsOnDate(resourceId, date) {
+    return this.data.reservations.filter((item) =>
+      item.resourceId === resourceId && item.date === date && BLOCKING_RESERVATION_STATUSES.includes(item.status)
     );
   },
 

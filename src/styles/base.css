@@ -822,6 +822,10 @@ textarea:focus-visible {
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
 }
 
+.two-col.wide-left {
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr);
+}
+
 .three-col {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -2455,6 +2459,358 @@ tbody tr:hover {
   background: var(--blue);
 }
 
+/* Single stacked bar + legend, used for the office admin request-status card */
+.status-breakdown {
+  display: grid;
+  gap: 16px;
+  padding: 16px 18px 18px;
+}
+
+.status-stack-track {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eceeeb;
+}
+
+.status-stack-segment {
+  height: 100%;
+}
+
+.status-legend-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.status-legend-list li.zero {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.status-legend-list strong {
+  margin-left: auto;
+  font-weight: 900;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 999px;
+}
+
+/* Single-line decision banner above the office admin dashboard */
+.decision-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #f0dca4;
+  border-radius: 8px;
+  background: #fff4d8;
+  margin-bottom: 24px;
+  padding: 14px 18px;
+  color: #8b5b00;
+  font-size: 13px;
+}
+
+.decision-banner strong {
+  font-weight: 900;
+}
+
+.decision-banner .link-button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #8b5b00;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Standalone search/filter/export bar above the approval queue lists */
+.toolbar-card {
+  padding: 16px 18px;
+}
+
+/* Resource Management: page heading above the editor's two-column layout */
+.resource-editor-heading {
+  margin-bottom: 20px;
+}
+
+.resource-editor-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.resource-editor-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Resource Management: bottom action bar as its own rounded card */
+.form-actions-card {
+  padding: 16px 18px;
+}
+
+.resource-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.resource-editor-actions-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+
+/* Resource Management: compact click-to-set availability calendar */
+.availability-calendar-surface {
+  padding: 18px;
+}
+
+.availability-calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.availability-calendar-nav strong {
+  font-size: 14px;
+}
+
+.mini-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.mini-calendar-head {
+  display: grid;
+  place-items: center;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.mini-calendar-day {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #eaf6ef;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.mini-calendar-day.muted {
+  background: transparent;
+  color: #c3c7cd;
+  font-weight: 600;
+}
+
+.mini-calendar-day.today {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--sun);
+}
+
+.mini-calendar-day.unavailable {
+  background: #fde3e1;
+  color: #973c38;
+}
+
+.mini-calendar-day.blocked {
+  background: var(--ink);
+  color: #fff;
+}
+
+.mini-calendar-day.maintenance {
+  background: var(--blue);
+  color: #fff;
+}
+
+.mini-calendar-day.selected {
+  box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--ink);
+}
+
+.mini-calendar-day:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.mini-calendar-day:not(:disabled):hover {
+  filter: brightness(0.97);
+}
+
+.mini-calendar-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 14px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.mini-calendar-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mini-calendar-legend-swatch {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border-radius: 4px;
+  background: #eaf6ef;
+}
+
+.mini-calendar-legend-swatch.today {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--sun);
+}
+
+.mini-calendar-legend-swatch.unavailable {
+  background: #fde3e1;
+}
+
+.mini-calendar-legend-swatch.blocked {
+  background: var(--ink);
+}
+
+.mini-calendar-legend-swatch.maintenance {
+  background: var(--blue);
+}
+
+.availability-calendar-selection {
+  padding: 16px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.calendar-side-summary {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.calendar-side-hint {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.day-status-toggle {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.day-status-toggle button {
+  flex: 1;
+}
+
+.toolbar-card .toolbar {
+  margin-bottom: 0;
+  flex-wrap: wrap;
+}
+
+.toolbar-card .toolbar .resource-search {
+  flex: 2 1 240px;
+}
+
+.toolbar-card .toolbar .status-filter {
+  flex: 0 1 180px;
+}
+
+.toolbar-card .toolbar .secondary-button {
+  flex: none;
+}
+
+/* Highlighted "needs your action" card on the approval queue page */
+.action-queue-card {
+  border-color: #f0dca4;
+  background: #fffaf0;
+}
+
+.action-queue-card.clear {
+  border-color: var(--line);
+  background: var(--card);
+}
+
+.action-queue-card .list-item {
+  margin: 16px 18px 0;
+  border: 1px solid #f0dca4;
+  border-radius: 8px;
+  background: #fffdf5;
+}
+
+.action-queue-card .list-item:last-child {
+  margin-bottom: 16px;
+}
+
+.action-queue-card.clear .list-item {
+  border-color: var(--line);
+  background: var(--card);
+}
+
+/* Current-step summary line in the all-approval-routes table */
+.table-subtext {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.route-step-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.route-step-line .step-dot {
+  flex: none;
+  margin-top: 0;
+}
+
+.route-progress {
+  display: grid;
+  gap: 6px;
+  min-width: 90px;
+}
+
+.route-progress span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 /* New request guidance hints */
 .request-submit-actions {
   display: block;
@@ -2621,6 +2977,59 @@ tbody tr:hover {
 
 .summary-tile:nth-last-child(-n + 3) {
   border-bottom: 0;
+}
+
+.summary-tiles.tiles-2col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summary-tiles.tiles-2col .summary-tile:nth-child(3n) {
+  border-right: 1px solid var(--line);
+}
+
+.summary-tiles.tiles-2col .summary-tile:nth-child(2n) {
+  border-right: 0;
+}
+
+.summary-tiles.tiles-2col .summary-tile:nth-last-child(-n + 3) {
+  border-bottom: 1px solid var(--line);
+}
+
+.summary-tiles.tiles-2col .summary-tile:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+/* Individually boxed status tiles, e.g. the office admin resource-availability card */
+.status-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+.status-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+
+.status-tile strong {
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.status-tile strong.zero {
+  color: var(--muted);
+}
+
+.status-tile small {
+  font-size: 13px;
+  font-weight: 700;
 }
 
 @media (max-width: 860px) {

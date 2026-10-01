@@ -63,6 +63,18 @@ function addDaysIso(date, days) {
   return new Date(next.getTime() - offset).toISOString().slice(0, 10);
 }
 
+function resourceOperatingWindow(resource) {
+  const openMinutes = toMinutes(resource?.openTime);
+  const closeMinutes = toMinutes(resource?.closeTime);
+  const start = openMinutes === null ? BUSINESS_DAY_START : openMinutes;
+  const end = closeMinutes === null || closeMinutes <= start ? BUSINESS_DAY_END : closeMinutes;
+  return { start, end };
+}
+
+function resourceBlockedDate(resource, date) {
+  return (resource?.blockedDates || []).find((item) => item.date === date) || null;
+}
+
 function publicConflicts(conflicts) {
   return conflicts.map((item) => ({
     id: item.id,
@@ -122,10 +134,11 @@ async function slotOptions(repo, resource, date, start, end) {
   if (!resource || !date) return [];
   const duration = selectedDuration(start, end);
   const step = duration >= DEFAULT_SLOT_MINUTES ? DEFAULT_SLOT_MINUTES : 30;
-  const unavailableDay = resource.status !== "Available" || date < tomorrowIso();
+  const unavailableDay = resource.status !== "Available" || date < tomorrowIso() || !!resourceBlockedDate(resource, date);
   const sameDay = unavailableDay ? [] : await reservationsForDate(repo, resource.id, date);
+  const window = resourceOperatingWindow(resource);
   const options = [];
-  for (let minute = BUSINESS_DAY_START; minute + duration <= BUSINESS_DAY_END; minute += step) {
+  for (let minute = window.start; minute + duration <= window.end; minute += step) {
     const slotStart = fromMinutes(minute);
     const slotEnd = fromMinutes(minute + duration);
     const conflicts = unavailableDay ? [] : conflictsFor(sameDay, slotStart, slotEnd);
@@ -163,12 +176,28 @@ async function availabilityResponse(repo, resource, date, start, end) {
     slots: await slotOptions(repo, resource, tomorrowIso(), start, end),
     alternatives: await alternatives(repo, resource, tomorrowIso(), start, end)
   };
+  const blocked = resourceBlockedDate(resource, date);
+  if (blocked) return {
+    status: "unavailable",
+    message: `${resource.name} is closed on ${date}${blocked.reason ? ` (${blocked.reason})` : ""}.`,
+    conflicts: [],
+    slots: await slotOptions(repo, resource, date, start, end),
+    alternatives: await alternatives(repo, resource, date, start, end)
+  };
   if (start >= end) return {
     status: "unavailable",
     message: "End time must be later than start time.",
     conflicts: [],
     slots: await slotOptions(repo, resource, date, start, end),
     alternatives: []
+  };
+  const window = resourceOperatingWindow(resource);
+  if (toMinutes(start) < window.start || toMinutes(end) > window.end) return {
+    status: "unavailable",
+    message: `${resource.name} is only available ${fromMinutes(window.start)}-${fromMinutes(window.end)}.`,
+    conflicts: [],
+    slots: await slotOptions(repo, resource, date, start, end),
+    alternatives: await alternatives(repo, resource, date, start, end)
   };
   const sameDay = await reservationsForDate(repo, resource.id, date);
   const conflicts = conflictsFor(sameDay, start, end);
@@ -296,6 +325,14 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       if (user.requesterType === "Student" && resource.type !== "Equipment") {
         throw new HttpError(403, "Student accounts may only reserve Equipment resources.");
       }
+      const submittedBlock = resourceBlockedDate(resource, body.date);
+      if (submittedBlock) {
+        throw new HttpError(409, `${resource.name} is closed on ${body.date}${submittedBlock.reason ? ` (${submittedBlock.reason})` : ""}.`);
+      }
+      const submittedWindow = resourceOperatingWindow(resource);
+      if (toMinutes(body.start) < submittedWindow.start || toMinutes(body.end) > submittedWindow.end) {
+        throw new HttpError(409, `${resource.name} is only available ${fromMinutes(submittedWindow.start)}-${fromMinutes(submittedWindow.end)}.`);
+      }
 
       const resourceDate = `${resource.id}#${body.date}`;
       const sameDay = await repo.query(TABLES.reservations, "resource-date-index", "resourceDate", resourceDate);
@@ -407,6 +444,15 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         requireFields(body, ["date", "start", "end"]);
         assertReservationLeadTime(body.date);
         if (body.start >= body.end) throw new HttpError(400, "End time must be later than start time.");
+        const rescheduleResource = await repo.get(TABLES.resources, { id: reservation.resourceId });
+        const rescheduleBlock = resourceBlockedDate(rescheduleResource, body.date);
+        if (rescheduleBlock) {
+          throw new HttpError(409, `${reservation.resourceName} is closed on ${body.date}${rescheduleBlock.reason ? ` (${rescheduleBlock.reason})` : ""}.`);
+        }
+        const rescheduleWindow = resourceOperatingWindow(rescheduleResource);
+        if (toMinutes(body.start) < rescheduleWindow.start || toMinutes(body.end) > rescheduleWindow.end) {
+          throw new HttpError(409, `${reservation.resourceName} is only available ${fromMinutes(rescheduleWindow.start)}-${fromMinutes(rescheduleWindow.end)}.`);
+        }
         const resourceDate = `${reservation.resourceId}#${body.date}`;
         const sameDay = await repo.query(TABLES.reservations, "resource-date-index", "resourceDate", resourceDate);
         if (sameDay.some((item) => item.id !== reservation.id && BLOCKING_STATUSES.has(item.status) && overlaps(item, body))) {

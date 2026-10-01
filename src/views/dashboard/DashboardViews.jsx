@@ -1,15 +1,16 @@
-import { ActivityRows, Badge, CardHeader, ChartSummary, EmptyState, Metrics, ReservationRows, ResourceMiniRows, StatusTiles } from "../../components/Common.jsx";
+import { ActivityRows, Badge, CardHeader, ChartSummary, EmptyState, Metrics, ReservationRows, ResourceMiniRows, StatusBreakdown, StatusTileGrid, StatusTiles } from "../../components/Common.jsx";
 import { OfficeRows } from "../admin/AdminViews.jsx";
 import { ApprovalRows } from "../reservations/ReservationViews.jsx";
 import { ArrivalRows, VisitorRows } from "../visitors/VisitorViews.jsx";
-import { formatDate } from "../../shared/utils.js";
-import { CheckCircle2 } from "lucide-react";
+import { formatDate, todayIso } from "../../shared/utils.js";
+import { CheckCircle2, Clock3 } from "lucide-react";
 
 const COLORS = {
   blue: { accent: "#1a7d9d", color: "#1a7d9d" },
   yellow: { accent: "#ffbd19", color: "#8b5b00" },
   green: { accent: "#167852", color: "#167852" },
-  purple: { accent: "#6652b6", color: "#6652b6" }
+  purple: { accent: "#6652b6", color: "#6652b6" },
+  red: { accent: "#b94444", color: "#b94444" }
 };
 
 function metric(label, value, caption, palette) {
@@ -110,8 +111,13 @@ function RequesterDashboard({ store, onNavigate, onAction, onReserve }) {
   );
 }
 
-function AlertStrip({ alerts }) {
-  if (!alerts.length) {
+function approvalWaitLabel(status) {
+  if (status === "For Payment") return "payment verification";
+  return status.replace(/^Under /, "").toLowerCase();
+}
+
+function DecisionBanner({ pendingCount, nextItem, onOpen }) {
+  if (!pendingCount) {
     return (
       <div className="alert-strip clear">
         <CheckCircle2 aria-hidden="true" size={18} />
@@ -120,54 +126,42 @@ function AlertStrip({ alerts }) {
     );
   }
   return (
-    <div className="alert-strip">
-      {alerts.map((alert) => (
-        <button className={`alert-card ${alert.tone}`} onClick={alert.onOpen} type="button" key={alert.label}>
-          <strong>{alert.value}</strong>
-          <span>{alert.label}</span>
-          <small>{alert.hint}</small>
-        </button>
-      ))}
+    <div className="decision-banner">
+      <Clock3 aria-hidden="true" size={18} />
+      <span>
+        <strong>{pendingCount} request{pendingCount === 1 ? "" : "s"} need{pendingCount === 1 ? "s" : ""} your decision.</strong>
+        {" "}{nextItem.resourceName} is waiting on {approvalWaitLabel(nextItem.status)}.
+      </span>
+      <button className="link-button" onClick={onOpen} type="button">Go to approval queue</button>
     </div>
   );
 }
 
 const PENDING_STATUSES = ["Under Owner Review", "Under Additional Review", "For Payment"];
 const APPROVED_STATUSES = ["Approved", "Confirmed", "In Use"];
-const RESOURCE_AVAILABILITY_STATUSES = ["Available", "Reserved", "In Use", "Under Maintenance"];
+const RESOURCE_AVAILABILITY_STATUSES = [
+  { status: "Available", label: "Available", color: COLORS.green.color },
+  { status: "Reserved", label: "Reserved", color: "#6f7481" },
+  { status: "In Use", label: "In use", color: COLORS.blue.color },
+  { status: "Under Maintenance", label: "Under maintenance", color: "#c2691d" }
+];
 
 function OfficeAdminDashboard({ store, onAction, onNavigate }) {
   const reservations = store.officeReservations;
   const countBy = (statuses) => reservations.filter((item) => statuses.includes(item.status)).length;
-  const alerts = [
-    {
-      label: "Overdue reviews",
-      value: store.overdueReservations.length,
-      hint: "Past schedule, no decision",
-      tone: "danger",
-      view: "approvalQueue"
-    },
-    {
-      label: "Waiting over 24h",
-      value: reservations.filter((item) => item.reviewReminderSentAt).length,
-      hint: "Reminder already sent",
-      tone: "warning",
-      view: "approvalQueue"
-    },
-    {
-      label: "Receipts to verify",
-      value: store.officePayments.filter((item) => item.status === "Pending Verification").length,
-      hint: "Uploaded, not checked",
-      tone: "info",
-      view: "payments"
-    }
-  ].filter((alert) => alert.value > 0).map((alert) => ({ ...alert, onOpen: () => onNavigate(alert.view) }));
-  const statusItems = ["Under Owner Review", "Under Additional Review", "For Payment", "Approved", "Confirmed", "In Use", "Completed", "Rejected", "Cancelled", "Expired", "No Show"].map((status) => ({
-    label: status,
-    value: reservations.filter((item) => item.status === status).length
-  }));
-  const availabilityItems = RESOURCE_AVAILABILITY_STATUSES.map((status) => ({
-    label: status,
+  const today = todayIso();
+  const actionable = [...store.actionableReservations].sort((left, right) => reservationTime(left) - reservationTime(right));
+  const pendingCount = store.actionableApprovalCount;
+  const statusGroups = [
+    { label: "In review", value: countBy(PENDING_STATUSES), color: COLORS.yellow.color },
+    { label: "Active", value: countBy(APPROVED_STATUSES), color: COLORS.green.color },
+    { label: "Completed", value: countBy(["Completed"]), color: COLORS.blue.color },
+    { label: "Expired", value: countBy(["Expired"]), color: COLORS.red.color },
+    { label: "Rejected, cancelled, no show", value: countBy(["Rejected", "Cancelled", "No Show"]), color: "#9aa0ab" }
+  ];
+  const availabilityItems = RESOURCE_AVAILABILITY_STATUSES.map(({ status, label, color }) => ({
+    label,
+    color,
     value: store.officeResources.filter((item) => item.status === status).length
   }));
   const mostRequested = store.officeResources
@@ -182,52 +176,50 @@ function OfficeAdminDashboard({ store, onAction, onNavigate }) {
     .slice(0, 8);
   return (
     <>
-      <AlertStrip alerts={alerts} />
+      <DecisionBanner pendingCount={pendingCount} nextItem={actionable[0]} onOpen={() => onNavigate("approvalQueue")} />
       <Metrics items={[
-        metric("Total Requests", reservations.length, "Submitted to your office", "blue"),
-        metric("Pending", countBy(PENDING_STATUSES), "Awaiting an office decision", "yellow"),
-        metric("Approved", countBy(APPROVED_STATUSES), "Confirmed, in use, or live", "green"),
-        metric("Completed", countBy(["Completed"]), "Finished reservations", "purple")
+        metric("Needs Your Action", pendingCount, "Awaiting an office decision", "yellow"),
+        metric("Starting Today", reservations.filter((item) => item.date === today && !["Rejected", "Cancelled", "Expired", "No Show"].includes(item.status)).length, "Confirmed for today", "green"),
+        metric("In Use Now", countBy(["In Use"]), "Resources out right now", "blue"),
+        metric("Expired", countBy(["Expired"]), "Lapsed without a decision", "red")
       ]} />
-      <div className="grid two-col section-gap">
-        <ChartSummary title="Request Status Overview" subtitle="Requests by current status" items={statusItems} />
-        <ChartSummary title="Resource Availability" subtitle="Resources by current status" items={availabilityItems} />
-      </div>
-      <div className="section-gap">
-        <ChartSummary title="Most Requested Resources" subtitle="Top resources by request volume" items={mostRequested} />
-      </div>
-      <div className="section-gap">
-        <article className="card table-wrap">
-          <CardHeader title="Recent Requests" subtitle="Latest reservations for your office" />
-          {recentRequests.length ? (
-            <table>
-              <thead><tr><th>Resource</th><th>Requester</th><th>Date</th><th>Time</th><th>Status</th></tr></thead>
-              <tbody>
-                {recentRequests.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.resourceName}</td>
-                    <td>{item.requester}</td>
-                    <td>{formatDate(item.date)}</td>
-                    <td>{item.start}-{item.end}</td>
-                    <td><Badge status={item.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <EmptyState>No requests have been submitted for this office yet.</EmptyState>}
-        </article>
-      </div>
-      <div className="section-gap">
-        <article className="card">
-          <CardHeader title="Approval queue" subtitle={`${store.officeScope} requests assigned to your office`} />
-          <ApprovalRows store={store}
-            items={store.actionableReservations}
-            office={store.officeScope}
-            onApprove={(id, stepId, reservation) => onAction(() => store.approveReservation(id, stepId), approvalSuccessMessage(reservation, stepId))}
-            onReject={(id, stepId, reason) => onAction(() => store.rejectReservation(id, stepId, reason), "Reservation rejected.")}
-            onAction={onAction}
-          />
-        </article>
+      <div className="grid two-col wide-left section-gap">
+        <div className="stack">
+          <article className="card">
+            <CardHeader title="Approval queue" subtitle={`${store.officeScope} requests assigned to your office`} action={<Badge status="Pending">{pendingCount} pending</Badge>} />
+            <ApprovalRows store={store}
+              items={store.actionableReservations}
+              office={store.officeScope}
+              onApprove={(id, stepId, reservation) => onAction(() => store.approveReservation(id, stepId), approvalSuccessMessage(reservation, stepId))}
+              onReject={(id, stepId, reason) => onAction(() => store.rejectReservation(id, stepId, reason), "Reservation rejected.")}
+              onAction={onAction}
+            />
+          </article>
+          <article className="card table-wrap">
+            <CardHeader title="Recent requests" subtitle="Latest reservations for your office" />
+            {recentRequests.length ? (
+              <table>
+                <thead><tr><th>Resource</th><th>Requester</th><th>Date</th><th>Time</th><th>Status</th></tr></thead>
+                <tbody>
+                  {recentRequests.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.resourceName}</td>
+                      <td>{item.requester}</td>
+                      <td>{formatDate(item.date)}</td>
+                      <td>{item.start}-{item.end}</td>
+                      <td><Badge status={item.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <EmptyState>No requests have been submitted for this office yet.</EmptyState>}
+          </article>
+        </div>
+        <div className="stack">
+          <StatusBreakdown title="Request status" subtitle={`${reservations.length} requests, grouped by stage`} items={statusGroups} />
+          <StatusTileGrid title="Resource availability" subtitle="Resources by current status" items={availabilityItems} />
+          <ChartSummary title="Most requested" subtitle="Top resources by request volume" items={mostRequested} />
+        </div>
       </div>
     </>
   );

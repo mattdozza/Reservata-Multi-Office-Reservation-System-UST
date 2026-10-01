@@ -4,8 +4,6 @@ import { compareDateTime, nextId, nowLabel, tomorrowIso } from "../shared/utils.
 import { buildApprovalSteps, decideApprovalStep, pendingApprovalSteps } from "../domain/workflows.js";
 import {
   BLOCKING_RESERVATION_STATUSES,
-  BUSINESS_DAY_END,
-  BUSINESS_DAY_START,
   DEFAULT_SLOT_MINUTES,
   RESOLVED_RESERVATION_STATUSES,
   ACTIVE_PAYMENT_STATUSES,
@@ -18,7 +16,10 @@ import {
   normalizePaymentDeadlineHours,
   requireReservationLeadDate,
   requireText,
+  resourceBlockedDate,
+  resourceOperatingWindow,
   selectedDuration,
+  toMinutes,
   validPositiveNumber
 } from "./shared.js";
 
@@ -229,12 +230,28 @@ export const reservationMethods = {
       slots: this.reservationSlotOptions(resourceId, tomorrowIso(), start, end),
       alternatives: this.availableAlternatives(resourceId, tomorrowIso(), start, end)
     };
+    const blocked = resourceBlockedDate(resource, date);
+    if (blocked) return {
+      status: "unavailable",
+      message: `${resource.name} is closed on ${date}${blocked.reason ? ` (${blocked.reason})` : ""}.`,
+      conflicts: [],
+      slots: this.reservationSlotOptions(resourceId, date, start, end),
+      alternatives: this.availableAlternatives(resourceId, date, start, end)
+    };
     if (start >= end) return {
       status: "unavailable",
       message: "End time must be later than start time.",
       conflicts: [],
       slots: this.reservationSlotOptions(resourceId, date, start, end),
       alternatives: []
+    };
+    const window = resourceOperatingWindow(resource);
+    if (toMinutes(start) < window.start || toMinutes(end) > window.end) return {
+      status: "unavailable",
+      message: `${resource.name} is only available ${fromMinutes(window.start)}-${fromMinutes(window.end)}.`,
+      conflicts: [],
+      slots: this.reservationSlotOptions(resourceId, date, start, end),
+      alternatives: this.availableAlternatives(resourceId, date, start, end)
     };
     const conflicts = this.resourceConflicts(resourceId, date, start, end);
     if (conflicts.length) return {
@@ -258,9 +275,10 @@ export const reservationMethods = {
     if (!resource || !date) return [];
     const duration = selectedDuration(start, end);
     const step = duration >= DEFAULT_SLOT_MINUTES ? DEFAULT_SLOT_MINUTES : 30;
-    const unavailableDay = resource.status !== "Available" || date < tomorrowIso();
+    const unavailableDay = resource.status !== "Available" || date < tomorrowIso() || !!resourceBlockedDate(resource, date);
+    const window = resourceOperatingWindow(resource);
     const options = [];
-    for (let minute = BUSINESS_DAY_START; minute + duration <= BUSINESS_DAY_END; minute += step) {
+    for (let minute = window.start; minute + duration <= window.end; minute += step) {
       const optionStart = fromMinutes(minute);
       const optionEnd = fromMinutes(minute + duration);
       const conflicts = unavailableDay ? [] : this.resourceConflicts(resourceId, date, optionStart, optionEnd);
@@ -317,6 +335,12 @@ export const reservationMethods = {
     const end = cleanText(values.end);
     if (!start || !end) throw new Error("Start and end time are required.");
     if (values.start >= values.end) throw new Error("End time must be later than start time.");
+    const blocked = resourceBlockedDate(resource, date);
+    if (blocked) throw new Error(`${resource.name} is closed on ${date}${blocked.reason ? ` (${blocked.reason})` : ""}.`);
+    const window = resourceOperatingWindow(resource);
+    if (toMinutes(start) < window.start || toMinutes(end) > window.end) {
+      throw new Error(`${resource.name} is only available ${fromMinutes(window.start)}-${fromMinutes(window.end)}.`);
+    }
     const quantity = validPositiveNumber(values.quantity || 1, "Quantity");
     if (quantity > Number(resource.capacity || 1)) throw new Error(`Quantity cannot exceed ${resource.name}'s capacity of ${resource.capacity}.`);
     const purpose = requireText(values.purpose, "Purpose", 10);
@@ -458,6 +482,13 @@ export const reservationMethods = {
     const end = cleanText(values.end);
     if (!start || !end) throw new Error("Start and end time are required.");
     if (start >= end) throw new Error("End time must be later than start time.");
+    const rescheduleResource = this.data.resources.find((item) => item.id === reservation.resourceId);
+    const rescheduleBlocked = resourceBlockedDate(rescheduleResource, date);
+    if (rescheduleBlocked) throw new Error(`${reservation.resourceName} is closed on ${date}${rescheduleBlocked.reason ? ` (${rescheduleBlocked.reason})` : ""}.`);
+    const rescheduleWindow = resourceOperatingWindow(rescheduleResource);
+    if (toMinutes(start) < rescheduleWindow.start || toMinutes(end) > rescheduleWindow.end) {
+      throw new Error(`${reservation.resourceName} is only available ${fromMinutes(rescheduleWindow.start)}-${fromMinutes(rescheduleWindow.end)}.`);
+    }
     if (this.hasConflict(reservation.resourceId, date, start, end, reservation.id)) {
       throw new Error("That resource already has an overlapping reservation request.");
     }

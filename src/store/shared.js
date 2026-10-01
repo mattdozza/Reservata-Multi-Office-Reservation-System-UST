@@ -12,6 +12,16 @@ export const MAX_RECEIPT_PREVIEW_BYTES = 700_000;
 export const BUSINESS_DAY_START = 8 * 60;
 export const BUSINESS_DAY_END = 17 * 60;
 export const DEFAULT_SLOT_MINUTES = 60;
+export const OFFICE_RESOURCE_TYPES = {
+  EdTech: ["Equipment"],
+  Simbahayan: ["Vehicle"],
+  "Dominican Residence": ["Vehicle"],
+  OSG: ["Visitor Service"]
+};
+
+export function allowedResourceTypes(office) {
+  return OFFICE_RESOURCE_TYPES[office] || null;
+}
 
 export function cleanText(value) {
   return String(value || "").trim();
@@ -118,6 +128,28 @@ export function toMinutes(value) {
 
 export function fromMinutes(value) {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+export function resourceOperatingWindow(resource) {
+  const openMinutes = toMinutes(resource?.openTime);
+  const closeMinutes = toMinutes(resource?.closeTime);
+  const start = openMinutes === null ? BUSINESS_DAY_START : openMinutes;
+  const end = closeMinutes === null || closeMinutes <= start ? BUSINESS_DAY_END : closeMinutes;
+  return { start, end };
+}
+
+export function resourceBlockedDate(resource, date) {
+  return (resource?.blockedDates || []).find((item) => item.date === date) || null;
+}
+
+export function normalizeBlockedDates(value) {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return source
+    .map((item) => ({ date: cleanText(item?.date), reason: cleanText(item?.reason).slice(0, 140) }))
+    .filter((item) => item.date && !seen.has(item.date) && seen.add(item.date))
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(0, 200);
 }
 
 export function selectedDuration(start, end) {

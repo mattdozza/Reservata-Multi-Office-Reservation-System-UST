@@ -117,10 +117,10 @@
     },
     {
       "id": "R-007",
-      "assetTag": "SIMBA-PROJ-007",
+      "assetTag": "EDTECH-PROJ-007",
       "name": "Projector Set A",
       "type": "Equipment",
-      "office": "Simbahayan",
+      "office": "EdTech",
       "location": "AV Storage",
       "serialNumber": "PROJ-UST-007",
       "tags": [

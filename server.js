@@ -37,6 +37,12 @@ const MAX_PAYMENT_DEADLINE_HOURS = 168;
 const BUSINESS_DAY_START = 8 * 60;
 const BUSINESS_DAY_END = 17 * 60;
 const DEFAULT_SLOT_MINUTES = 60;
+const OFFICE_RESOURCE_TYPES = {
+  EdTech: ["Equipment"],
+  Simbahayan: ["Vehicle"],
+  "Dominican Residence": ["Vehicle"],
+  OSG: ["Visitor Service"]
+};
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -448,6 +454,18 @@ function fromMinutes(value) {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
 
+function resourceOperatingWindow(resource) {
+  const openMinutes = toMinutes(resource?.openTime);
+  const closeMinutes = toMinutes(resource?.closeTime);
+  const start = openMinutes === null ? BUSINESS_DAY_START : openMinutes;
+  const end = closeMinutes === null || closeMinutes <= start ? BUSINESS_DAY_END : closeMinutes;
+  return { start, end };
+}
+
+function resourceBlockedDate(resource, date) {
+  return (resource?.blockedDates || []).find((item) => item.date === date) || null;
+}
+
 function selectedDuration(start, end) {
   const startMinutes = toMinutes(start);
   const endMinutes = toMinutes(end);
@@ -489,9 +507,10 @@ function reservationSlotOptions(database, resource, date, start, end) {
   if (!resource || !date) return [];
   const duration = selectedDuration(start, end);
   const step = duration >= DEFAULT_SLOT_MINUTES ? DEFAULT_SLOT_MINUTES : 30;
-  const unavailableDay = resource.status !== "Available" || date < tomorrowIso();
+  const unavailableDay = resource.status !== "Available" || date < tomorrowIso() || !!resourceBlockedDate(resource, date);
+  const window = resourceOperatingWindow(resource);
   const options = [];
-  for (let minute = BUSINESS_DAY_START; minute + duration <= BUSINESS_DAY_END; minute += step) {
+  for (let minute = window.start; minute + duration <= window.end; minute += step) {
     const slotStart = fromMinutes(minute);
     const slotEnd = fromMinutes(minute + duration);
     const conflicts = unavailableDay ? [] : reservationConflicts(database, resource.id, date, slotStart, slotEnd);
@@ -531,12 +550,28 @@ function resourceAvailability(database, resourceId, date, start, end) {
     slots: reservationSlotOptions(database, resource, tomorrowIso(), start, end),
     alternatives: availableAlternatives(database, resource, tomorrowIso(), start, end)
   };
+  const blocked = resourceBlockedDate(resource, date);
+  if (blocked) return {
+    status: "unavailable",
+    message: `${resource.name} is closed on ${date}${blocked.reason ? ` (${blocked.reason})` : ""}.`,
+    conflicts: [],
+    slots: reservationSlotOptions(database, resource, date, start, end),
+    alternatives: availableAlternatives(database, resource, date, start, end)
+  };
   if (start >= end) return {
     status: "unavailable",
     message: "End time must be later than start time.",
     conflicts: [],
     slots: reservationSlotOptions(database, resource, date, start, end),
     alternatives: []
+  };
+  const window = resourceOperatingWindow(resource);
+  if (toMinutes(start) < window.start || toMinutes(end) > window.end) return {
+    status: "unavailable",
+    message: `${resource.name} is only available ${fromMinutes(window.start)}-${fromMinutes(window.end)}.`,
+    conflicts: [],
+    slots: reservationSlotOptions(database, resource, date, start, end),
+    alternatives: availableAlternatives(database, resource, date, start, end)
   };
   const conflicts = reservationConflicts(database, resource.id, date, start, end);
   if (conflicts.length) return {
@@ -880,6 +915,10 @@ function isRequesterReservationChange(previous, next, user, database) {
     && unchangedExcept(previous, next, ["date", "start", "end", "status", "rescheduleCount", "rescheduledAt", "approvalSteps", "paymentId"]);
   if (!rescheduled) return false;
   assertReservationLeadTime(next);
+  const rescheduleResource = database.resources.find((item) => item.id === next.resourceId);
+  if (resourceBlockedDate(rescheduleResource, next.date)) return false;
+  const rescheduleWindow = resourceOperatingWindow(rescheduleResource);
+  if (toMinutes(next.start) < rescheduleWindow.start || toMinutes(next.end) > rescheduleWindow.end) return false;
   return reservationConflicts(database, next.resourceId, next.date, next.start, next.end, next.id).length === 0;
 }
 
@@ -977,6 +1016,15 @@ function assertScopedMutation(before, after, user, database) {
         throw new HttpError(403, "Student accounts may only reserve Equipment resources.");
       }
       assertReservationLeadTime(reservation);
+      const submittedResource = full.resources.find((item) => item.id === reservation.resourceId);
+      const submittedBlock = resourceBlockedDate(submittedResource, reservation.date);
+      if (submittedBlock) {
+        throw new HttpError(409, `${reservation.resourceName} is closed on ${reservation.date}${submittedBlock.reason ? ` (${submittedBlock.reason})` : ""}.`);
+      }
+      const submittedWindow = resourceOperatingWindow(submittedResource);
+      if (toMinutes(reservation.start) < submittedWindow.start || toMinutes(reservation.end) > submittedWindow.end) {
+        throw new HttpError(409, `${reservation.resourceName} is only available ${fromMinutes(submittedWindow.start)}-${fromMinutes(submittedWindow.end)}.`);
+      }
       if (reservationConflicts(full, reservation.resourceId, reservation.date, reservation.start, reservation.end, reservation.id).length) {
         throw new HttpError(409, "That resource already has an overlapping reservation request.");
       }
@@ -994,6 +1042,20 @@ function assertScopedMutation(before, after, user, database) {
   if (user.role === "Office Admin") {
     if (changedReservations.some((item) => item.office !== user.office && !item.approvalSteps?.some((step) => step.office === user.office)) || changedResources.some((item) => item.office !== user.office)) {
       throw new HttpError(403, "Office Administrators may only change records assigned to their office.");
+    }
+    const allowedTypes = OFFICE_RESOURCE_TYPES[user.office];
+    if (allowedTypes && changedResources.some((item) => !allowedTypes.includes(item.type))) {
+      throw new HttpError(400, `${user.office} can only manage ${allowedTypes.join(" or ")} resources.`);
+    }
+    for (const resource of changedResources) {
+      if (resource.openTime && toMinutes(resource.openTime) === null) throw new HttpError(400, "Open time must be a valid time.");
+      if (resource.closeTime && toMinutes(resource.closeTime) === null) throw new HttpError(400, "Close time must be a valid time.");
+      if (resource.openTime && resource.closeTime && toMinutes(resource.openTime) >= toMinutes(resource.closeTime)) {
+        throw new HttpError(400, "Open time must be earlier than close time.");
+      }
+      if ((resource.blockedDates || []).some((item) => !item?.date)) {
+        throw new HttpError(400, "A blocked date entry is missing its date.");
+      }
     }
     if (changedPayments.some((item) => paymentOffice(item) !== user.office && !isNewPaymentHandoff(item))) {
       throw new HttpError(403, "That payment is assigned to the resource-owning office.");

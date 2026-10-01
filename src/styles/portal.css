@@ -117,7 +117,7 @@
   min-width: 0;
 }
 
-.view-root .card:not(.resource-card):not(.metric-card) {
+.view-root .card:not(.resource-card):not(.metric-card):not(.toolbar-card):not(.action-queue-card):not(.resource-editor-card) {
   border: 0;
   border-block: 1px solid var(--line);
   border-radius: 0;
@@ -135,6 +135,10 @@
 .view-root .two-col {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
+}
+
+.view-root .two-col.wide-left {
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr);
 }
 
 .view-root .four-col {
@@ -485,6 +489,7 @@
 
 @container (max-width: 960px) {
   .view-root .two-col,
+  .view-root .two-col.wide-left,
   .view-root .calendar-layout {
     grid-template-columns: minmax(0, 1fr);
   }

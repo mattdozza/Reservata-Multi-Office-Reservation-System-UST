@@ -9,7 +9,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 import { ApprovalTrail, AvailabilityLegend, Badge, CardHeader, ConfirmModal, DetailGrid, DetailModal, EmptyState, ReceiptPreview, ReservationRows } from "../../components/Common.jsx";
 import { VISITOR_CAPABLE_REQUESTER_TYPES } from "../../config.js";
 import { compareDateTime, displayTimestamp, downloadCsv, formatDate, formatTime, sortBy, todayIso, tomorrowIso } from "../../shared/utils.js";
-import { pendingApprovalSteps } from "../../domain/workflows.js";
+import { approvalProgress, pendingApprovalSteps } from "../../domain/workflows.js";
 import { BLOCKING_RESERVATION_STATUSES } from "../../store/shared.js";
 import { VisitorRows } from "../visitors/VisitorViews.jsx";
 export { ResourcesView } from "./ResourcesView.jsx";
@@ -452,25 +452,58 @@ function ReasonModal({ title, message, confirmLabel, details, onConfirm, onCance
   );
 }
 
-function ApprovalRouteRows({ store, items }) {
+function currentApprovalStep(reservation) {
+  const steps = reservation.approvalSteps || [];
+  return steps.find((step) => step.status === "Pending")
+    || [...steps].reverse().find((step) => ["Approved", "Rejected", "Skipped"].includes(step.status))
+    || steps[0];
+}
+
+function ApprovalRouteTable({ store, items }) {
   const [selected, setSelected] = useState(null);
-  const routed = items.filter((item) => item.approvalSteps?.length);
-  if (!routed.length) return <EmptyState>No routed reservation requests yet.</EmptyState>;
+  if (!items.length) return <EmptyState>No approval routes match this search.</EmptyState>;
 
   return (
     <>
-      {routed.map((item) => (
-        <div className="list-item approval-route-item" key={item.id}>
-          <div>
-            <Badge status={item.status} />
-            {item.isOverdue && <Badge status="Overdue Review" className="overdue-badge">Overdue</Badge>}
-            <h3 className="item-title">{item.resourceName}</h3>
-            <p>{item.requester} · {formatDate(item.date)} · {item.purpose}</p>
-            <ApprovalTrail reservation={item} />
-          </div>
-          <div className="split-actions"><button className="secondary-button" onClick={() => setSelected(item)} type="button">View Details</button></div>
-        </div>
-      ))}
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Resource</th><th>Requester</th><th>Date</th><th>Progress</th><th>Status</th><th /></tr></thead>
+          <tbody>
+            {items.map((item) => {
+              const progress = approvalProgress(item);
+              const step = currentApprovalStep(item);
+              return (
+                <tr key={item.id}>
+                  <td>
+                    <strong>{item.resourceName}</strong>
+                    {step && (
+                      <p className="table-subtext route-step-line">
+                        <span className={`step-dot step-${step.status.toLowerCase()}`} aria-hidden="true" />
+                        {step.name ? `${step.name}, ` : ""}{step.office}, {step.status.toLowerCase()}{step.decidedBy ? ` (${step.decidedBy})` : ""}
+                      </p>
+                    )}
+                  </td>
+                  <td>
+                    <strong>{item.requester}</strong>
+                    <p className="table-subtext">{item.purpose}</p>
+                  </td>
+                  <td>{formatDate(item.date)}</td>
+                  <td>
+                    {progress.total ? (
+                      <div className="route-progress">
+                        <div className="chart-track"><b style={{ width: `${(progress.completed / progress.total) * 100}%` }} /></div>
+                        <span>{progress.completed} of {progress.total}</span>
+                      </div>
+                    ) : <button className="link-button" onClick={() => setSelected(item)} type="button">Open details</button>}
+                  </td>
+                  <td><Badge status={item.status} /></td>
+                  <td><button className="secondary-button" onClick={() => setSelected(item)} type="button">View Details</button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       {selected && (
         <DetailModal title={selected.resourceName} subtitle={`${selected.id} · ${selected.status}`} onClose={() => setSelected(null)}>
           <DetailGrid items={[
@@ -498,20 +531,31 @@ export function ApprovalsView({ store, onAction }) {
     return matchesQuery && matchesStatus;
   });
   const statusOptions = ["All", ...new Set(store.officeReservations.map((item) => item.status))];
+  const actionItems = store.actionableReservations.map((item) => ({ ...item, isOverdue: store.isReservationOverdue(item) })).filter((item) => filtered.some((route) => route.id === item.id));
+  const pendingCount = actionItems.reduce((total, item) => total + pendingApprovalSteps(item, store.officeScope).length, 0);
   return (
     <div className="stack">
-      <article className="card">
-        <CardHeader
-          title="Requests awaiting office action"
-          subtitle="Decisions automatically activate the next required office or payment stage."
-          action={<button className="secondary-button" onClick={() => downloadCsv("reservata-approval-routes.csv", filtered.map((item) => ({
+      <article className="card toolbar-card">
+        <div className="toolbar">
+          <input className="input resource-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search approval routes" aria-label="Search approval routes" />
+          <select className="select status-filter" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter approval status">
+            {statusOptions.map((item) => <option key={item}>{item}</option>)}
+          </select>
+          <button className="secondary-button" onClick={() => downloadCsv("reservata-approval-routes.csv", filtered.map((item) => ({
             id: item.id,
             resource: item.resourceName,
             requester: item.requester,
             office: item.office,
             status: item.status,
             purpose: item.purpose
-          })))} disabled={!filtered.length} type="button">Export CSV</button>}
+          })))} disabled={!filtered.length} type="button">Export CSV</button>
+        </div>
+      </article>
+      <article className={`card action-queue-card ${pendingCount ? "" : "clear"}`.trim()}>
+        <CardHeader
+          title="Needs your action"
+          subtitle="Approving forwards the request to the next required office or payment stage."
+          action={pendingCount ? <Badge status="Pending">{pendingCount} pending</Badge> : null}
         />
         {!!store.overdueReservations.length && (
           <OverdueNotice
@@ -519,14 +563,8 @@ export function ApprovalsView({ store, onAction }) {
             message="These requests are past their scheduled end time and still unresolved. Review, approve, or reject them with a comment."
           />
         )}
-        <div className="toolbar list-toolbar">
-          <input className="input resource-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search approval routes" aria-label="Search approval routes" />
-          <select className="select status-filter" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter approval status">
-            {statusOptions.map((item) => <option key={item}>{item}</option>)}
-          </select>
-        </div>
         <ApprovalRows store={store}
-          items={store.actionableReservations.map((item) => ({ ...item, isOverdue: store.isReservationOverdue(item) })).filter((item) => filtered.some((route) => route.id === item.id))}
+          items={actionItems}
           office={store.officeScope}
           onApprove={(id, stepId, reservation) => onAction(() => store.approveReservation(id, stepId), approvalSuccessMessage(reservation, stepId))}
           onReject={(id, stepId, reason) => onAction(() => store.rejectReservation(id, stepId, reason), "Reservation rejected.")}
@@ -534,8 +572,8 @@ export function ApprovalsView({ store, onAction }) {
         />
       </article>
       <article className="card">
-        <CardHeader title="Approval route tracker" subtitle="Full approval routes stay visible after your decision is recorded." />
-        <ApprovalRouteRows store={store} items={filtered} />
+        <CardHeader title="All approval routes" subtitle="Full routes stay visible after your decision is recorded." />
+        <ApprovalRouteTable store={store} items={filtered} />
       </article>
     </div>
   );

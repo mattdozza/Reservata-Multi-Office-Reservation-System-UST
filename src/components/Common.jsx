@@ -44,17 +44,62 @@ export function Metrics({ items, columns = "metrics-grid" }) {
   );
 }
 
-export function StatusTiles({ title, subtitle, items }) {
+export function StatusTiles({ title, subtitle, items, columns }) {
   return (
     <article className="card summary-card">
       <CardHeader title={title} subtitle={subtitle} />
-      <div className="summary-tiles">
+      <div className={`summary-tiles ${columns === 2 ? "tiles-2col" : ""}`.trim()}>
         {items.map((item) => (
           <div className="summary-tile" style={{ "--metric-color": item.color }} key={item.label}>
             <strong>{item.value}</strong>
             <small>{item.label}</small>
           </div>
         ))}
+      </div>
+    </article>
+  );
+}
+
+export function StatusTileGrid({ title, subtitle, items }) {
+  return (
+    <article className="card status-tile-card">
+      <CardHeader title={title} subtitle={subtitle} />
+      <div className="status-tile-grid">
+        {items.map((item) => (
+          <div className="status-tile" key={item.label}>
+            <strong className={item.value ? "" : "zero"}>{item.value}</strong>
+            <small style={{ color: item.color }}>{item.label}</small>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+export function StatusBreakdown({ title, subtitle, items }) {
+  const total = Math.max(1, items.reduce((sum, item) => sum + (Number(item.value) || 0), 0));
+  return (
+    <article className="card chart-card">
+      <CardHeader title={title} subtitle={subtitle} />
+      <div className="status-breakdown">
+        <div className="status-stack-track" role="img" aria-label={`${title} breakdown`}>
+          {items.filter((item) => item.value > 0).map((item) => (
+            <span
+              className="status-stack-segment"
+              style={{ width: `${(item.value / total) * 100}%`, background: item.color }}
+              key={item.label}
+            />
+          ))}
+        </div>
+        <ul className="status-legend-list">
+          {items.map((item) => (
+            <li className={item.value ? "" : "zero"} key={item.label}>
+              <span className="status-dot" style={{ background: item.color }} aria-hidden="true" />
+              <span className="status-legend-label">{item.label}</span>
+              <strong>{item.value}</strong>
+            </li>
+          ))}
+        </ul>
       </div>
     </article>
   );
