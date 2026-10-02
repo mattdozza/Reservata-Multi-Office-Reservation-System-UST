@@ -52,6 +52,7 @@ export const awsApi = {
   createApprovingBody: (approvingBody) => request("/approving-bodies", { method: "POST", body: body(approvingBody) }),
   updateApprovingBody: (id, approvingBody) => request(`/approving-bodies/${encodeURIComponent(id)}`, { method: "PATCH", body: body(approvingBody) }),
   verifyPayment: (id, verified, reason = "") => request(`/payments/${encodeURIComponent(id)}/verification`, { method: "PATCH", body: body({ verified, reason }) }),
+  reopenPayment: (id) => request(`/payments/${encodeURIComponent(id)}/verification`, { method: "PATCH", body: body({ reopen: true }) }),
   createOffice: (office) => request("/offices", { method: "POST", body: body(office) }),
   updateOffice: (id, office) => request(`/offices/${encodeURIComponent(id)}`, { method: "PATCH", body: body(office) }),
   createUser: (user) => request("/users", { method: "POST", body: body(user) }),

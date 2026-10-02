@@ -1,7 +1,7 @@
 import { REQUESTER_TYPES, ROLE_IDS } from "../config.js";
 import { createLocalUserAccount, loadDatabase } from "../services/api.js";
 import { awsApi } from "../services/awsApi.js";
-import { cleanText, isUstSsoEmail, requirePaymentDeadlineHours, requireText } from "./shared.js";
+import { cleanText, isUstSsoEmail, requirePaymentDeadlineHours, requirePaymentInstructions, requirePaymentSteps, requireText } from "./shared.js";
 
 export const adminMethods = {
   async updatePaymentDeadlineSettings(value) {
@@ -10,6 +10,21 @@ export const adminMethods = {
     const previousData = this.snapshot();
     this.settings.paymentDeadlineHours = paymentDeadlineHours;
     this.addActivity("Payment window updated", this.currentUser.name, `${paymentDeadlineHours} hours`);
+    await this.save(() => awsApi.updateSystemSettings(this.settings), previousData);
+  },
+
+  async updatePaymentSettings(values = {}) {
+    this.requireRole("superAdmin");
+    const paymentDeadlineHours = requirePaymentDeadlineHours(values.paymentDeadlineHours, "Default payment window");
+    const paymentInstructions = requirePaymentInstructions(values.paymentInstructions);
+    const previousData = this.snapshot();
+    this.settings.paymentDeadlineHours = paymentDeadlineHours;
+    this.settings.paymentInstructions = paymentInstructions;
+    // Optional so existing callers that only send the window and instructions keep working.
+    if (values.paymentSteps !== undefined) {
+      this.settings.paymentSteps = requirePaymentSteps(values.paymentSteps);
+    }
+    this.addActivity("Payment settings updated", this.currentUser.name, `${paymentDeadlineHours} hours`);
     await this.save(() => awsApi.updateSystemSettings(this.settings), previousData);
   },
 
@@ -70,14 +85,13 @@ export const adminMethods = {
   },
 
   async saveWorkflow(template, id = "") {
-    this.requireRole("superAdmin");
+    this.requireRole("superAdmin", "officeAdmin");
     const name = String(template.name || "").trim();
     const steps = (template.steps || []).map((step, index) => ({
       id: step.id || `STEP-${index + 1}`,
       name: String(step.name || "").trim(),
       office: step.office,
       sequence: Number(step.sequence || 1),
-      condition: step.condition || "always",
       approvingBodyId: step.approvingBodyId || ""
     }));
     if (!name || !steps.length || !steps.some((step) => step.office === "$OWNER" && step.sequence === 1)) {
@@ -85,18 +99,28 @@ export const adminMethods = {
     }
     const previousData = this.snapshot();
     const existing = id ? this.data.approvalTemplates.find((item) => item.id === id) : null;
+    if (id && !existing) throw new Error("Approval workflow not found.");
+    // Office Admins may author workflows for their own office only; shared templates stay Super Admin managed.
+    if (this.session.activeRole === "officeAdmin" && existing && existing.office !== this.officeScope) {
+      throw new Error("Office Administrators can only edit approval workflows they created for their office.");
+    }
+    const office = this.session.activeRole === "officeAdmin"
+      ? this.officeScope
+      : (template.office || existing?.office || "");
     const workflow = {
       ...(existing || {}),
       id: existing?.id || `WF-${Date.now()}`,
       name,
-      resourceType: template.resourceType || "All",
+      resourceType: template.resourceType || existing?.resourceType || "All",
       status: template.status || existing?.status || "Active",
-      steps
+      steps,
+      ...(office ? { office } : {})
     };
     if (existing) Object.assign(existing, workflow);
     else this.data.approvalTemplates.push(workflow);
     this.addActivity(existing ? "Approval workflow updated" : "Approval workflow created", this.currentUser.name, workflow.name);
     await this.save(() => existing ? awsApi.updateWorkflow(workflow.id, workflow) : awsApi.createWorkflow(workflow), previousData);
+    return workflow;
   },
 
   async saveApprovingBody(values, id = "") {
@@ -120,45 +144,6 @@ export const adminMethods = {
     else this.data.approvingBodies.push(approvingBody);
     this.addActivity(existing ? "Approving body updated" : "Approving body created", this.currentUser.name, approvingBody.bodyName);
     await this.save(() => existing ? awsApi.updateApprovingBody(approvingBody.id, approvingBody) : awsApi.createApprovingBody(approvingBody), previousData);
-  },
-
-  async saveRequirementOption(values, id = "") {
-    this.requireRole("superAdmin");
-    const label = requireText(values.label, "Requirement label", 3);
-    const help = requireText(values.help, "Requirement help text", 8);
-    const optionId = id || cleanText(values.id)
-      .replace(/[^a-zA-Z0-9]+(.)/g, (_, char) => char.toUpperCase())
-      .replace(/^[^a-zA-Z]+/, "")
-      .replace(/^./, (char) => char.toLowerCase());
-    if (!optionId) throw new Error("Requirement key is required.");
-    if (!/^[a-z][a-zA-Z0-9]*$/.test(optionId)) throw new Error("Requirement key must use camelCase letters and numbers.");
-    const previousData = this.snapshot();
-    const existing = id ? this.allRequirementOptions.find((item) => item.id === id) : null;
-    if (!existing && this.allRequirementOptions.some((item) => item.id === optionId)) {
-      throw new Error("A requirement with that key already exists.");
-    }
-    const option = {
-      ...(existing || {}),
-      id: existing?.id || optionId,
-      label,
-      help,
-      status: values.status || existing?.status || "Active",
-      locked: Boolean(existing?.locked)
-    };
-    if (existing) Object.assign(existing, option);
-    else this.settings.requirementOptions.push(option);
-    this.addActivity(existing ? "Requirement updated" : "Requirement created", this.currentUser.name, option.label);
-    await this.save(() => awsApi.updateSystemSettings(this.settings), previousData);
-  },
-
-  async archiveRequirementOption(id) {
-    this.requireRole("superAdmin");
-    const option = this.allRequirementOptions.find((item) => item.id === id);
-    if (!option) throw new Error("Requirement not found.");
-    const previousData = this.snapshot();
-    option.status = "Archived";
-    this.addActivity("Requirement archived", this.currentUser.name, option.label);
-    await this.save(() => awsApi.updateSystemSettings(this.settings), previousData);
   },
 
   async archiveWorkflow(id) {

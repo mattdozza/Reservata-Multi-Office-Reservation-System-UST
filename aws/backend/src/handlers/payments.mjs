@@ -93,6 +93,38 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       requireRole(user, ROLES.officeAdmin);
       requireOffice(user, payment);
       const body = parseBody(event);
+
+      if (body.reopen === true) {
+        if (payment.status !== "Verified") throw new HttpError(409, "Only a verified payment can be reopened.");
+        const reservation = await repo.get(TABLES.reservations, { id: payment.reservationId });
+        if (!reservation) throw new HttpError(404, "Related reservation not found.");
+        requireOffice(user, reservation);
+        if (reservation.status !== "Confirmed") throw new HttpError(409, "Only a confirmed reservation can be reopened.");
+        const updatedAt = now();
+        await repo.transact([
+          { Update: {
+            TableName: TABLES.payments,
+            Key: { id: payment.id },
+            UpdateExpression: "SET #status = :pending, verifiedAt = :empty, verifiedBy = :empty, rejectionReason = :empty, updatedAt = :updatedAt",
+            ConditionExpression: "#status = :verified AND office = :office",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":pending": "Pending Verification", ":verified": "Verified", ":office": user.office, ":empty": "", ":updatedAt": updatedAt }
+          } },
+          { Update: {
+            TableName: TABLES.reservations,
+            Key: { id: reservation.id },
+            UpdateExpression: "SET #status = :next, updatedAt = :updatedAt",
+            ConditionExpression: "#status = :confirmed",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":next": "For Payment", ":confirmed": "Confirmed", ":updatedAt": updatedAt }
+          } },
+          { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Payment review reopened", reservation.id, reservation.office, reservation.id, payment.receipt) } },
+          { Put: { TableName: TABLES.notifications, Item: notificationRecord(reservation.requesterEmail, reservation.requester, `${reservation.resourceName}: payment verification was reopened by ${user.name}.`) } },
+          { Put: { TableName: TABLES.reservationHistory, Item: reservationHistoryRecord(user, reservation, "Confirmed", "For Payment", "") } }
+        ]);
+        return json(200, { payment: { ...payment, status: "Pending Verification" }, reservation: { ...reservation, status: "For Payment" } });
+      }
+
       if (typeof body.verified !== "boolean") throw new HttpError(400, "verified must be true or false.");
       if (body.verified && payment.receipt === "Awaiting upload") throw new HttpError(409, "A receipt must be uploaded before verification.");
       const reservation = await repo.get(TABLES.reservations, { id: payment.reservationId });

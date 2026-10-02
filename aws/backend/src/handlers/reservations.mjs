@@ -345,11 +345,6 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
       const workflowTemplateId = resource.workflowTemplateId || "WF-BASIC";
       const workflow = await repo.get(TABLES.approvalWorkflows, { id: workflowTemplateId });
       if (!workflow || workflow.status !== "Active") throw new HttpError(409, "The resource does not have an active approval workflow.");
-      const requirements = {
-        setupRequired: Boolean(body.setupRequired),
-        externalVisitors: Boolean(body.externalVisitors),
-        parkingRequired: Boolean(body.parkingRequired)
-      };
       const reservation = {
         id,
         requester: user.name,
@@ -365,7 +360,6 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         end: body.end,
         quantity: Number(body.quantity || 1),
         purpose: String(body.purpose).trim(),
-        ...requirements,
         status: "Under Owner Review",
         submittedAt,
         createdAt: submittedAt,
@@ -374,7 +368,7 @@ export function createHandler(repo = repository, s3 = new S3Client({}), signer =
         workflowName: workflow.name,
         workflowVersion: 1,
         slotLockVersion: 1,
-        approvalSteps: buildApprovalSteps(workflow, resource, requirements, id)
+        approvalSteps: buildApprovalSteps(workflow, resource, id)
       };
       const notification = notificationRecord(user.email, user.name, `${resource.name} request was submitted for ${resource.office} review.`);
       const activity = activityRecord(user, "Reservation submitted", resource.name, resource.office, reservation.id);

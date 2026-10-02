@@ -23,7 +23,7 @@ All AWS endpoints require `Authorization: Bearer <University JWT>`. API Gateway 
 | GET | `/payments` | List scoped payment records |
 | POST | `/payments/{id}/receipt-upload` | Create a five-minute private S3 upload URL |
 | POST | `/payments/{id}/receipt-complete` | Verify the uploaded S3 object and advance the payment to Pending Verification |
-| PATCH | `/payments/{id}/verification` | Verify or reject a receipt |
+| PATCH | `/payments/{id}/verification` | Verify or reject a receipt; send `{ reopen: true }` to return a verified payment to Pending Verification and its reservation to For Payment |
 | GET/POST | `/visitors` | List or submit visitor requests |
 | PATCH | `/visitors/{id}/decision` | Approve or reject a visitor request |
 | PATCH | `/visitors/{id}/check-in` | Record arrival |
@@ -33,8 +33,8 @@ All AWS endpoints require `Authorization: Bearer <University JWT>`. API Gateway 
 | PATCH | `/users/{email}/access` | Activate or deactivate an account as Super Admin |
 | GET/POST | `/offices` | List or create offices as Super Admin |
 | PATCH | `/offices/{id}` | Rename, activate, or archive an office as Super Admin |
-| GET/POST | `/workflows` | List or create approval workflows as Super Admin |
-| PATCH | `/workflows/{id}` | Edit or archive an approval workflow as Super Admin |
+| GET/POST | `/workflows` | List or create approval workflows as Super Admin, or create one for their office as an Office Admin |
+| PATCH | `/workflows/{id}` | Edit or archive an approval workflow as Super Admin, or edit an office-owned workflow as its Office Admin |
 | GET/PATCH | `/settings` | Read or update system settings as Super Admin |
 | GET | `/notifications` | List the authenticated user's notifications |
 | PATCH | `/notifications/read` | Mark the authenticated user's notifications read |
@@ -128,7 +128,7 @@ Used after changes such as:
 - arrival check-in
 - account role/access updates
 - office, resource, and approval-workflow maintenance
-- payment deadline and additional-requirement settings
+- payment deadline and payment instruction settings
 
 ## Local-to-AWS Mapping
 

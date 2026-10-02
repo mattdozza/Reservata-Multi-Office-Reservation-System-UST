@@ -7,10 +7,10 @@ test("Lambda workflow engine activates parallel supporting offices", () => {
     requiresPayment: true,
     status: "Under Owner Review",
     approvalSteps: buildApprovalSteps({ steps: [
-      { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1, condition: "always" },
-      { id: "FAC", name: "Facilities", office: "Facilities Management", sequence: 2, condition: "setupRequired" },
-      { id: "OSG", name: "OSG", office: "OSG", sequence: 2, condition: "externalVisitors" }
-    ] }, { office: "Simbahayan" }, { setupRequired: true, externalVisitors: true }, "REQ-1")
+      { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1 },
+      { id: "FAC", name: "Facilities", office: "Facilities Management", sequence: 2 },
+      { id: "OSG", name: "OSG", office: "OSG", sequence: 2 }
+    ] }, { office: "Simbahayan" }, "REQ-1")
   };
   const owner = decideApprovalStep(reservation, "REQ-1-OWNER", true, "Owner Admin", "now");
   reservation.approvalSteps = owner.steps;
@@ -23,12 +23,12 @@ test("Lambda workflow engine activates parallel supporting offices", () => {
 
 test("approvingBodyId on a template step is inert to the core approval engine", () => {
   const template = { steps: [
-    { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1, condition: "always", approvingBodyId: "AB-999" }
+    { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1, approvingBodyId: "AB-999" }
   ] };
   const reservation = {
     requiresPayment: false,
     status: "Under Owner Review",
-    approvalSteps: buildApprovalSteps(template, { office: "Simbahayan" }, {}, "REQ-2")
+    approvalSteps: buildApprovalSteps(template, { office: "Simbahayan" }, "REQ-2")
   };
   assert.equal(reservation.approvalSteps[0].approvingBodyId, undefined, "buildApprovalSteps should not copy approvingBodyId onto the embedded step");
   assert.equal(canDecideStep({ role: "Office Admin", office: "Simbahayan" }, reservation.approvalSteps[0]), true);

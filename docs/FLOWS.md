@@ -4,12 +4,12 @@
 
 1. A user signs in with an account assigned the Requester role.
 2. The requester selects an available resource and date. Reservata displays the selected day's available and unavailable time slots.
-3. The requester selects a schedule, quantity, purpose, and any additional requirements.
+3. The requester selects a schedule, quantity, and purpose.
 4. Reservata checks the time range, capacity inputs, and overlapping blocking reservations. Pending, approved, confirmed, and payment-stage reservations all block conflicting schedules.
 5. If the selected slot is blocked, Reservata prevents submission and suggests alternative slots from the selected date or the next available dates.
 6. In AWS mode, reservation submission writes 15-minute DynamoDB lock records in the same transaction as the pending request, so concurrent overlapping submissions cannot both succeed.
 7. The selected resource supplies an active approval-workflow template.
-8. Reservata snapshots the matching steps onto the reservation. Conditional steps are included only when the requester selects the related requirement.
+8. Reservata snapshots every step in the resource's workflow onto the reservation, so the office-configured route always runs in full.
 9. The resource-owning office receives the sequence 1 owner review. The request has `Under Owner Review` status.
 10. Owner approval activates the next sequence. Steps with the same sequence run in parallel, so separate support offices do not wait on one another unnecessarily.
 11. Each office sees and decides only its pending assigned steps. A rejection stops the route, marks later waiting steps `Skipped`, and releases the reservation's held slot.
@@ -61,7 +61,7 @@ Requester submission
 1. Adds, renames, activates, or archives offices.
 2. Assigns supported roles to existing user accounts and activates or deactivates access.
 3. Creates approval workflows with an owner step plus supporting-office steps.
-4. Configures step sequence and conditions. Equal sequence values run in parallel.
+4. Configures step sequence. Equal sequence values run in parallel.
 5. Edits or archives unused workflow templates. Existing reservations retain their snapshotted route.
 6. Sets the default payment-expiration window for paid reservations.
 7. Reviews system-wide coverage and audit activity.
@@ -82,7 +82,7 @@ OSG visitor processing is separate from reservation Event Reviews. Event Reviews
 - Every Requester account has an affiliation: Student, Faculty, Staff, or Student Org Rep, set by a Super Admin.
 - Student requesters may browse and reserve only Equipment resources, and cannot access visitor requests.
 - Faculty, Staff, and Student Org Rep requesters may reserve Equipment and Vehicle resources, and may submit and track their own visitor access requests.
-- Office Admins maintain only resources owned by their office and decide only steps assigned to that office.
+- Office Admins maintain only resources owned by their office, decide only steps assigned to that office, and may author approval workflows for their own resources.
 - Payment verification belongs to the resource-owning office, even when a support office completes the final operational step.
 - OSG Admins handle OSG-assigned event reviews and OSG visitor operations; they cannot edit resources, offices, users, or workflows.
 - Super Admins maintain system configuration but do not use requester or office transaction screens.

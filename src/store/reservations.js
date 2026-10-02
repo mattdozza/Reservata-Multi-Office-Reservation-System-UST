@@ -1,7 +1,7 @@
 import { loadResourceAvailability } from "../services/api.js";
 import { awsApi } from "../services/awsApi.js";
 import { compareDateTime, nextId, nowLabel, tomorrowIso } from "../shared/utils.js";
-import { buildApprovalSteps, decideApprovalStep, pendingApprovalSteps } from "../domain/workflows.js";
+import { buildApprovalSteps, competingRequests, decideApprovalStep, fcfsQueue, pendingApprovalSteps } from "../domain/workflows.js";
 import {
   BLOCKING_RESERVATION_STATUSES,
   DEFAULT_SLOT_MINUTES,
@@ -217,6 +217,23 @@ export const reservationMethods = {
     return this.resourceConflicts(resourceId, date, start, end, excludeId).length > 0;
   },
 
+  /** FCFS place for a request among those competing for the same resource and schedule. */
+  fcfsFor(reservation) {
+    return fcfsQueue(reservation, this.data.reservations);
+  },
+
+  competingWith(reservation) {
+    return competingRequests(reservation, this.data.reservations);
+  },
+
+  /** Requests held for review because their resource went Under Maintenance or Unavailable. */
+  get resourceConflictReservations() {
+    const source = this.session.activeRole === "requester"
+      ? this.myReservations()
+      : this.officeReservations;
+    return source.filter((reservation) => reservation.resourceConflict);
+  },
+
   resourceAvailability(resourceId, date, start, end) {
     const resource = this.data.resources.find((item) => item.id === resourceId);
     const emptySlots = { slots: [], alternatives: [] };
@@ -274,7 +291,8 @@ export const reservationMethods = {
     const resource = this.data.resources.find((item) => item.id === resourceId);
     if (!resource || !date) return [];
     const duration = selectedDuration(start, end);
-    const step = duration >= DEFAULT_SLOT_MINUTES ? DEFAULT_SLOT_MINUTES : 30;
+    const step = resource.slotDuration || (duration >= DEFAULT_SLOT_MINUTES ? DEFAULT_SLOT_MINUTES : 30);
+    const buffer = resource.bufferMinutes || 0;
     const unavailableDay = resource.status !== "Available" || date < tomorrowIso() || !!resourceBlockedDate(resource, date);
     const window = resourceOperatingWindow(resource);
     const options = [];
@@ -282,11 +300,12 @@ export const reservationMethods = {
       const optionStart = fromMinutes(minute);
       const optionEnd = fromMinutes(minute + duration);
       const conflicts = unavailableDay ? [] : this.resourceConflicts(resourceId, date, optionStart, optionEnd);
+      const hasBufferConflict = !unavailableDay && buffer > 0 && this.resourceConflicts(resourceId, date, optionEnd, fromMinutes(toMinutes(optionEnd) + buffer)).length > 0;
       options.push({
         date,
         start: optionStart,
         end: optionEnd,
-        status: unavailableDay || conflicts.length ? "unavailable" : "available",
+        status: unavailableDay || conflicts.length || hasBufferConflict ? "unavailable" : "available",
         conflicts
       });
     }
@@ -353,7 +372,6 @@ export const reservationMethods = {
     const template = this.data.approvalTemplates.find((item) => item.id === resource.workflowTemplateId && item.status === "Active")
       || this.data.approvalTemplates.find((item) => item.resourceType === resource.type && item.status === "Active")
       || this.data.approvalTemplates.find((item) => item.id === "WF-BASIC");
-    const requestDetails = Object.fromEntries(this.allRequirementOptions.map((option) => [option.id, Boolean(values[option.id])]));
     const reservation = {
       id,
       requester: this.currentUser.name,
@@ -368,14 +386,13 @@ export const reservationMethods = {
       quantity,
       purpose,
       driverChoice: resource.type === "Vehicle" ? (values.driverChoice || "Without Driver") : "Not applicable",
-      ...requestDetails,
       status: "Under Owner Review",
       submittedAt: nowLabel(),
       requiresPayment: resource.requiresPayment,
       workflowTemplateId: template?.id || "WF-BASIC",
       workflowName: template?.name || "Basic Resource Approval",
       rescheduleCount: 0,
-      approvalSteps: buildApprovalSteps(template, resource, requestDetails, id)
+      approvalSteps: buildApprovalSteps(template, resource, id)
     };
 
     this.data.reservations.unshift(reservation);
@@ -403,6 +420,22 @@ export const reservationMethods = {
     const previousData = this.snapshot();
 
     decideApprovalStep(reservation, step.id, true, this.currentUser.name, nowLabel());
+
+    // A request cannot reach final confirmation while its resource is out of service.
+    if (["Confirmed", "In Use"].includes(reservation.status)) {
+      const resource = this.data.resources.find((item) => item.id === reservation.resourceId);
+      if (resource && resource.status !== "Available") {
+        this.data = previousData;
+        throw new Error(`${resource.name} is ${resource.status}, so ${reservation.id} cannot be confirmed.`);
+      }
+      // First-Come, First-Served: only the earliest competing request may be confirmed.
+      const queue = fcfsQueue(reservation, this.data.reservations);
+      if (queue && queue.position > 1) {
+        this.data = previousData;
+        throw new Error(`${reservation.id} is number ${queue.position} of ${queue.total} in the queue for this schedule. Approve the earlier request first.`);
+      }
+    }
+
     if (reservation.status === "For Payment" && !reservation.paymentId) {
       const resource = this.data.resources.find((item) => item.id === reservation.resourceId);
       const paymentId = nextId("PAY", this.data.payments);

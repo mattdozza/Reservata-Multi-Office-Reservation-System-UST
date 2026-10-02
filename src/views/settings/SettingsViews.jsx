@@ -3,8 +3,7 @@ import { confirmLeaveForms } from "../../shared/formSafety.js";
 import { useEffect, useMemo, useState } from "react";
 import { Archive, Clock3, Edit3, Plus, Save, Trash2 } from "lucide-react";
 import { Badge, CardHeader } from "../../components/Common.jsx";
-import { MAX_PAYMENT_DEADLINE_HOURS, MIN_PAYMENT_DEADLINE_HOURS } from "../../store/shared.js";
-import { WORKFLOW_CONDITIONS } from "../../domain/workflows.js";
+import { MAX_PAYMENT_DEADLINE_HOURS, MAX_PAYMENT_INSTRUCTIONS_LENGTH, MAX_PAYMENT_STEPS, MAX_PAYMENT_STEP_FIELD_LENGTH, MIN_PAYMENT_DEADLINE_HOURS, MIN_PAYMENT_STEP_TITLE_LENGTH } from "../../store/shared.js";
 export { OfficeSettingsView } from "./OfficeSettingsView.jsx";
 
 const RESOURCE_TYPES = ["Equipment", "Vehicle", "Visitor Service"];
@@ -22,20 +21,8 @@ function workflowDraft(template) {
             name: "Resource Owner Review",
             office: "$OWNER",
             sequence: 1,
-            condition: "always",
           },
         ],
-      };
-}
-
-function requirementDraft(option) {
-  return option
-    ? structuredClone(option)
-    : {
-        id: "",
-        label: "",
-        help: "",
-        status: "Active",
       };
 }
 
@@ -46,31 +33,34 @@ export function WorkflowsView({ store, onAction }) {
     (item) => item.id === selectedId,
   );
   const [draft, setDraft] = useState(workflowDraft());
-  const [selectedRequirementId, setSelectedRequirementId] = useState("");
-  const selectedRequirement = store.allRequirementOptions.find(
-    (item) => item.id === selectedRequirementId,
-  );
-  const [requirementDraftState, setRequirementDraftState] =
-    useState(requirementDraft());
   const [paymentDeadlineHours, setPaymentDeadlineHours] = useState(
     store.settings.paymentDeadlineHours,
+  );
+  const [paymentInstructions, setPaymentInstructions] = useState(
+    store.settings.paymentInstructions,
+  );
+  const [paymentSteps, setPaymentSteps] = useState(
+    store.settings.paymentSteps.map((step) => ({ ...step })),
   );
   const offices = useMemo(
     () => store.data.offices.filter((item) => item.status === "Active"),
     [store.data.offices],
   );
-  const conditionOptions = [
-    ["always", "Always required"],
-    ...store.allRequirementOptions.map((option) => [
-      option.id,
-      `${option.label}${option.status === "Archived" ? " (archived)" : ""}`,
-    ]),
-    ...WORKFLOW_CONDITIONS.filter(
-      ([value]) =>
-        value !== "always" &&
-        !store.allRequirementOptions.some((option) => option.id === value),
-    ),
-  ];
+  // Approval tiers map to the workflow sequence: tier 1 is the owner review,
+  // higher tiers run in order, and steps that share a tier run in parallel.
+  const [addTier, setAddTier] = useState(2);
+  const highestTier = Math.max(
+    1,
+    ...draft.steps.map((step) => Number(step.sequence) || 1),
+  );
+  const tierOptions = Array.from(
+    { length: highestTier + 1 },
+    (_, index) => index + 1,
+  );
+  const addTierValue = Math.min(
+    Math.max(2, Number(addTier) || 2),
+    highestTier + 1,
+  );
 
   useEffect(() => setDraft(workflowDraft(selected)), [selected]);
   useEffect(
@@ -78,9 +68,45 @@ export function WorkflowsView({ store, onAction }) {
     [store.settings.paymentDeadlineHours],
   );
   useEffect(
-    () => setRequirementDraftState(requirementDraft(selectedRequirement)),
-    [selectedRequirement],
+    () => setPaymentInstructions(store.settings.paymentInstructions),
+    [store.settings.paymentInstructions],
   );
+  useEffect(
+    () => setPaymentSteps(store.settings.paymentSteps.map((step) => ({ ...step }))),
+    [store.settings.paymentSteps],
+  );
+
+  function updatePaymentStep(index, field, value) {
+    setPaymentSteps((current) =>
+      current.map((step, stepIndex) =>
+        stepIndex === index ? { ...step, [field]: value } : step,
+      ),
+    );
+  }
+
+  function addPaymentStep() {
+    setPaymentSteps((current) =>
+      current.length >= MAX_PAYMENT_STEPS
+        ? current
+        : [...current, { title: "", detail: "" }],
+    );
+  }
+
+  function removePaymentStep(index) {
+    setPaymentSteps((current) =>
+      current.filter((_, stepIndex) => stepIndex !== index),
+    );
+  }
+
+  function movePaymentStep(index, offset) {
+    setPaymentSteps((current) => {
+      const target = index + offset;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
 
   function updateStep(index, field, value) {
     setDraft((current) => ({
@@ -92,6 +118,7 @@ export function WorkflowsView({ store, onAction }) {
   }
 
   function addStep() {
+    const tier = addTierValue;
     setDraft((current) => ({
       ...current,
       steps: [
@@ -100,8 +127,7 @@ export function WorkflowsView({ store, onAction }) {
           id: `STEP-${Date.now()}`,
           name: "Supporting Office Review",
           office: offices[0]?.name || "OSG",
-          sequence: 2,
-          condition: "always",
+          sequence: tier,
         },
       ],
     }));
@@ -141,43 +167,15 @@ export function WorkflowsView({ store, onAction }) {
     if (saved) setSelectedId("");
   }
 
-  async function submitRequirement(event) {
-    event.preventDefault();
-    const saved = await onAction(
-      () =>
-        store.saveRequirementOption(
-          requirementDraftState,
-          selectedRequirementId,
-        ),
-      selectedRequirementId
-        ? "Additional requirement updated."
-        : "Additional requirement created.",
-    );
-    if (saved) {
-      setSelectedRequirementId("");
-      setRequirementDraftState(requirementDraft());
-    }
-  }
-
-  async function archiveRequirement() {
-    if (
-      !window.confirm(
-        "Archive this additional requirement? It will no longer appear on new reservation forms.",
-      )
-    )
-      return;
-    const saved = await onAction(
-      () => store.archiveRequirementOption(selectedRequirementId),
-      "Additional requirement archived.",
-    );
-    if (saved) setSelectedRequirementId("");
-  }
-
   async function submitPaymentSettings(event) {
     event.preventDefault();
     await onAction(
-      () => store.updatePaymentDeadlineSettings(paymentDeadlineHours),
-      "Default payment window updated.",
+      () => store.updatePaymentSettings({
+      paymentDeadlineHours,
+      paymentInstructions,
+      paymentSteps,
+    }),
+      "Payment settings updated.",
     );
   }
 
@@ -186,7 +184,6 @@ export function WorkflowsView({ store, onAction }) {
       <div className="workflow-tabs" role="tablist" aria-label="Approval settings">
         {[
           ["workflows", "Workflows"],
-          ["requirements", "Requirements"],
           ["payment", "Payment settings"],
         ].map(([id, label], index, tabs) => (
           <button
@@ -214,8 +211,8 @@ export function WorkflowsView({ store, onAction }) {
       </div>
       <ManagedForm className="workflow-panel workflow-payment" id="settings-panel-payment" role="tabpanel" aria-labelledby="settings-tab-payment" hidden={activeTab !== "payment"} onSubmit={submitPaymentSettings}>
         <CardHeader
-          title="Payment expiration"
-          subtitle="Default receipt-upload window for paid reservations."
+          title="Payment settings"
+          subtitle="Default receipt-upload window and the payment instructions shown to requesters."
         />
         <div className="form-grid">
           <div className="field">
@@ -232,10 +229,102 @@ export function WorkflowsView({ store, onAction }) {
             />
             <small className="field-help">The deadline is also capped by the reservation start time.</small>
           </div>
+          <div className="field">
+            <label htmlFor="payment-instructions">Payment instructions</label>
+            <textarea
+              id="payment-instructions"
+              className="textarea"
+              maxLength={MAX_PAYMENT_INSTRUCTIONS_LENGTH}
+              rows={5}
+              value={paymentInstructions}
+              onChange={(event) => setPaymentInstructions(event.target.value)}
+              required
+            />
+            <small className="field-help">
+              Shown to requesters on the paid-request payment steps. Explain how and where to settle the fee.
+            </small>
+          </div>
+        </div>
+        <div className="payment-step-editor">
+          <h3>
+            Payment next steps <span>{paymentSteps.length} of {MAX_PAYMENT_STEPS}</span>
+          </h3>
+          <p className="field-help workflow-tier-help">
+            The numbered list requesters see after submitting a paid request. Use
+            {" "}<code>{"{fee}"}</code>, <code>{"{office}"}</code>, <code>{"{window}"}</code>
+            {" "}and <code>{"{reservationId}"}</code> to insert the live values.
+          </p>
+          {paymentSteps.map((step, index) => (
+            <div className="payment-step-row" key={index}>
+              <span className="workflow-step-number" aria-label={`Step ${index + 1}`}>{index + 1}</span>
+              <div className="field">
+                <label htmlFor={`payment-step-title-${index}`}>Step title</label>
+                <input
+                  id={`payment-step-title-${index}`}
+                  className="input"
+                  maxLength={MAX_PAYMENT_STEP_FIELD_LENGTH}
+                  minLength={MIN_PAYMENT_STEP_TITLE_LENGTH}
+                  value={step.title}
+                  onChange={(event) => updatePaymentStep(index, "title", event.target.value)}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor={`payment-step-detail-${index}`}>Step detail</label>
+                <input
+                  id={`payment-step-detail-${index}`}
+                  className="input"
+                  maxLength={MAX_PAYMENT_STEP_FIELD_LENGTH}
+                  value={step.detail}
+                  onChange={(event) => updatePaymentStep(index, "detail", event.target.value)}
+                />
+              </div>
+              <div className="payment-step-row-actions">
+                <button
+                  aria-label={`Move step ${index + 1} up`}
+                  className="icon-button"
+                  disabled={index === 0}
+                  onClick={() => movePaymentStep(index, -1)}
+                  title="Move up"
+                  type="button"
+                >
+                  ↑
+                </button>
+                <button
+                  aria-label={`Move step ${index + 1} down`}
+                  className="icon-button"
+                  disabled={index === paymentSteps.length - 1}
+                  onClick={() => movePaymentStep(index, 1)}
+                  title="Move down"
+                  type="button"
+                >
+                  ↓
+                </button>
+                <button
+                  aria-label={`Remove step ${index + 1}`}
+                  className="icon-button danger-icon"
+                  disabled={paymentSteps.length <= 1}
+                  onClick={() => removePaymentStep(index)}
+                  title="Remove step"
+                  type="button"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            className="secondary-button icon-text-button"
+            disabled={paymentSteps.length >= MAX_PAYMENT_STEPS}
+            onClick={addPaymentStep}
+            type="button"
+          >
+            <Plus size={16} /> Add step
+          </button>
         </div>
         <div className="split-actions form-actions">
           <button className="primary-button icon-text-button" type="submit">
-            <Clock3 size={16} /> Save Payment Window
+            <Clock3 size={16} /> Save Payment Settings
           </button>
         </div>
       </ManagedForm>
@@ -243,7 +332,7 @@ export function WorkflowsView({ store, onAction }) {
         <ManagedForm className="workflow-panel workflow-form" onSubmit={submit}>
           <CardHeader
             title={selectedId ? "Edit workflow" : "Create workflow"}
-            subtitle="Sequence 1 runs first; equal later sequence numbers run in parallel."
+            subtitle="Tier 1 is the owner review. Steps in the same tier run in parallel; each tier starts after the previous tier is cleared."
           />
           <div className="form-grid workflow-details">
             <div className="field">
@@ -300,7 +389,10 @@ export function WorkflowsView({ store, onAction }) {
           </div>
 
           <div className="workflow-step-editor">
-            <h3>Review steps <span>{draft.steps.length}</span></h3>
+            <h3>Review steps <span>{draft.steps.length} · {highestTier} tier{highestTier === 1 ? "" : "s"}</span></h3>
+            <p className="field-help workflow-tier-help">
+              Tier 1 is the owner review. Steps that share a tier are approved in parallel; the next tier only starts once the previous tier is cleared.
+            </p>
             {draft.steps.map((step, index) => (
               <div className="workflow-step-row" key={step.id}>
                 <span className="workflow-step-number" aria-label={`Step ${index + 1}`}>{index + 1}</span>
@@ -357,35 +449,28 @@ export function WorkflowsView({ store, onAction }) {
                   </select>
                 </div>
                 <div className="field">
-                  <label htmlFor={`step-sequence-${step.id}`}>Sequence</label>
-                  <input
-                    id={`step-sequence-${step.id}`}
-                    className="input"
-                    min="1"
-                    type="number"
-                    value={step.sequence}
+                  <label htmlFor={`step-tier-${step.id}`}>Approval tier</label>
+                  <select
+                    id={`step-tier-${step.id}`}
+                    className="select"
+                    value={Number(step.sequence) || 1}
                     disabled={index === 0}
                     onChange={(event) =>
                       updateStep(index, "sequence", event.target.value)
                     }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor={`step-condition-${step.id}`}>Condition</label>
-                  <select
-                    id={`step-condition-${step.id}`}
-                    className="select"
-                    value={step.condition}
-                    disabled={index === 0}
-                    onChange={(event) =>
-                      updateStep(index, "condition", event.target.value)
-                    }
                   >
-                    {conditionOptions.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
+                    {index === 0 ? (
+                      <option value={1}>Tier 1 · owner</option>
+                    ) : (
+                      tierOptions
+                        .filter((tier) => tier !== 1)
+                        .map((tier) => (
+                          <option key={tier} value={tier}>
+                            Tier {tier}
+                            {tier === highestTier + 1 ? " (new)" : ""}
+                          </option>
+                        ))
+                    )}
                   </select>
                 </div>
                 <button
@@ -404,7 +489,25 @@ export function WorkflowsView({ store, onAction }) {
             ))}
           </div>
 
-          <div className="split-actions form-actions">
+          <div className="workflow-add-step">
+            <div className="field">
+              <label htmlFor="new-step-tier">Approval tier for the new step</label>
+              <select
+                id="new-step-tier"
+                className="select"
+                value={addTierValue}
+                onChange={(event) => setAddTier(event.target.value)}
+              >
+                {tierOptions
+                  .filter((tier) => tier !== 1)
+                  .map((tier) => (
+                    <option key={tier} value={tier}>
+                      Tier {tier}
+                      {tier === highestTier + 1 ? " (new tier)" : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
             <button
               className="secondary-button icon-text-button"
               onClick={addStep}
@@ -412,6 +515,12 @@ export function WorkflowsView({ store, onAction }) {
             >
               <Plus size={16} /> Add Review Step
             </button>
+            <small className="field-help workflow-add-step-note">
+              Steps that share a tier are reviewed together in parallel.
+            </small>
+          </div>
+
+          <div className="split-actions form-actions">
             <button className="primary-button icon-text-button" type="submit">
               <Save size={16} />{" "}
               {selectedId ? "Save Workflow" : "Create Workflow"}
@@ -484,127 +593,6 @@ export function WorkflowsView({ store, onAction }) {
           </div>
         </section>
       </div>
-
-      <section className="workflow-panel requirement-manager" id="settings-panel-requirements" role="tabpanel" aria-labelledby="settings-tab-requirements" hidden={activeTab !== "requirements"}>
-        <CardHeader
-          title="Additional requirements"
-          subtitle="These options appear on the requester reservation form and can trigger workflow steps."
-        />
-        <div className="workflow-requirements-layout">
-          <ManagedForm className="form-grid" onSubmit={submitRequirement}>
-            <div className="field">
-              <label htmlFor="requirement-key">Requirement key</label>
-              <input
-                id="requirement-key"
-                className="input"
-                disabled={Boolean(selectedRequirementId)}
-                placeholder="cateringRequired"
-                value={requirementDraftState.id}
-                onChange={(event) =>
-                  setRequirementDraftState((current) => ({
-                    ...current,
-                    id: event.target.value,
-                  }))
-                }
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="requirement-status">Status</label>
-              <select
-                id="requirement-status"
-                className="select"
-                value={requirementDraftState.status}
-                onChange={(event) =>
-                  setRequirementDraftState((current) => ({
-                    ...current,
-                    status: event.target.value,
-                  }))
-                }
-              >
-                <option>Active</option>
-                <option>Archived</option>
-              </select>
-            </div>
-            <div className="field span-2">
-              <label htmlFor="requirement-label">Label</label>
-              <input
-                id="requirement-label"
-                className="input"
-                value={requirementDraftState.label}
-                onChange={(event) =>
-                  setRequirementDraftState((current) => ({
-                    ...current,
-                    label: event.target.value,
-                  }))
-                }
-                required
-              />
-            </div>
-            <div className="field span-2">
-              <label htmlFor="requirement-help">Help text</label>
-              <textarea
-                id="requirement-help"
-                className="textarea"
-                value={requirementDraftState.help}
-                onChange={(event) =>
-                  setRequirementDraftState((current) => ({
-                    ...current,
-                    help: event.target.value,
-                  }))
-                }
-                required
-              />
-            </div>
-            <div className="split-actions form-actions span-2">
-              <button className="primary-button icon-text-button" type="submit">
-                <Save size={16} />{" "}
-                {selectedRequirementId ? "Save Requirement" : "Add Requirement"}
-              </button>
-              {selectedRequirementId && (
-                <button
-                  className="secondary-button"
-                  onClick={() => setSelectedRequirementId("")}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              )}
-              {selectedRequirementId && (
-                <button
-                  className="danger-button icon-text-button"
-                  onClick={archiveRequirement}
-                  type="button"
-                >
-                  <Archive size={16} /> Archive
-                </button>
-              )}
-            </div>
-          </ManagedForm>
-          <div className="requirement-list">
-            {store.allRequirementOptions.map((option) => (
-              <div className="list-item" key={option.id}>
-                <div>
-                  <Badge status={option.status || "Active"} />
-                  <h3 className="item-title">{option.label}</h3>
-                  <p>
-                    {option.id} · {option.help}
-                  </p>
-                </div>
-                <button
-                  className="icon-button"
-                  aria-label={`Edit ${option.label}`}
-                  title="Edit requirement"
-                  onClick={() => setSelectedRequirementId(option.id)}
-                  type="button"
-                >
-                  <Edit3 size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

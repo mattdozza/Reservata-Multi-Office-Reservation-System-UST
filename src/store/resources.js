@@ -20,27 +20,59 @@ export const resourceMethods = {
     return this.data.resources.filter((resource) => resource.office === this.officeScope);
   },
 
+  /**
+   * When a resource leaves Available, hold every affected request for review: pending
+   * requests are flagged for the owning office to decide, and confirmed requests notify
+   * both the office and the requester.
+   */
+  flagResourceOutage(resource) {
+    if (!resource || resource.status === "Available") return 0;
+    const affected = this.data.reservations.filter((item) =>
+      item.resourceId === resource.id
+      && ["Under Owner Review", "Under Additional Review", "Approved", "For Payment", "In Use", "Confirmed"].includes(item.status));
+    for (const reservation of affected) {
+      reservation.resourceConflict = true;
+      reservation.resourceConflictReason = `${resource.name} is currently ${resource.status}.`;
+      this.addNotification(
+        reservation.office,
+        `${resource.name} is ${resource.status}. Review ${reservation.id} (${reservation.requester}) and decide whether to reject it or offer an alternative.`,
+        "Resource"
+      );
+      if (["Confirmed", "In Use"].includes(reservation.status)) {
+        this.addNotification(
+          reservation.requester,
+          `${resource.name}: your confirmed reservation ${reservation.id} is affected because the resource is ${resource.status}. The owning office will contact you with the next step.`,
+          "Resource"
+        );
+      }
+      this.addActivity("Resource conflict flagged", this.currentUser.name, `${resource.name}: ${reservation.id}`, reservation.id, reservation.id);
+    }
+    return affected.length;
+  },
+
   async cycleResourceStatus(id) {
-    this.requireRole("officeAdmin");
+    this.requireRole("officeAdmin", "superAdmin");
     const resource = this.data.resources.find((item) => item.id === id);
     if (!resource) return;
-    this.requireOfficeRecord(resource);
+    if (this.session.activeRole === "officeAdmin") this.requireOfficeRecord(resource);
     const previousData = this.snapshot();
     const statuses = ["Available", "Reserved", "In Use", "Under Maintenance", "Unavailable"];
+    const previousStatus = resource.status;
     resource.status = statuses[(statuses.indexOf(resource.status) + 1) % statuses.length];
     this.addActivity("Resource status updated", this.currentUser.name, `${resource.name}: ${resource.status}`);
+    this.flagResourceOutage(resource);
     this.data.reservations
       .filter((item) => item.resourceId === resource.id && BLOCKING_RESERVATION_STATUSES.includes(item.status))
-      .forEach((item) => this.addNotification(item.requester, `${resource.name} status changed to ${resource.status}. Please monitor your request schedule.`, "Resource"));
+      .forEach((item) => this.addNotification(item.requester, `${resource.name} status changed from ${previousStatus} to ${resource.status}. Please monitor your request schedule.`, "Resource"));
     await this.save(() => awsApi.updateResourceStatus(id, resource.status), previousData);
   },
 
   async saveResource(values, id = "") {
-    this.requireRole("officeAdmin");
+    this.requireRole("officeAdmin", "superAdmin");
     const previousData = this.snapshot();
     const existing = id ? this.data.resources.find((item) => item.id === id) : null;
     if (id && !existing) throw new Error("Resource not found.");
-    if (existing) this.requireOfficeRecord(existing);
+    if (existing && this.session.activeRole === "officeAdmin") this.requireOfficeRecord(existing);
     if (!String(values.name || "").trim() || !String(values.location || "").trim()) {
       throw new Error("Resource name and location are required.");
     }
@@ -125,9 +157,9 @@ export const resourceMethods = {
   },
 
   async archiveResource(id) {
-    this.requireRole("officeAdmin");
+    this.requireRole("officeAdmin", "superAdmin");
     const resource = this.data.resources.find((item) => item.id === id);
-    this.requireOfficeRecord(resource);
+    if (this.session.activeRole === "officeAdmin") this.requireOfficeRecord(resource);
     const hasOpenReservations = this.data.reservations.some((item) =>
       item.resourceId === id && !["Rejected", "Cancelled", "Completed", "Expired", "No Show"].includes(item.status)
     );

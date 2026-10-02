@@ -49,7 +49,7 @@ const resourceById = new Map(source.resources.map((item) => [item.id, item]));
 const reservations = source.reservations.map((item) => {
   const resource = resourceById.get(item.resourceId);
   const workflow = workflowById.get(resource?.workflowTemplateId || "WF-BASIC");
-  const steps = buildApprovalSteps(workflow, resource, item, item.id);
+  const steps = buildApprovalSteps(workflow, resource, item.id);
   if (item.status !== "Pending") {
     steps.forEach((step) => {
       step.status = item.status === "Rejected" ? "Rejected" : "Approved";

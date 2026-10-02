@@ -86,7 +86,7 @@ test("create -> decide -> status update accumulates Approvals and ReservationHis
   const reservationHistory = [];
   let reservation;
   const resource = { id: "R-1", name: "Projector", office: "Simbahayan", type: "Equipment", status: "Available", requiresPayment: false, workflowTemplateId: "WF-BASIC" };
-  const workflow = { id: "WF-BASIC", name: "Basic Resource Approval", status: "Active", steps: [{ id: "OWNER", name: "Owner Review", office: "$OWNER", sequence: 1, condition: "always" }] };
+  const workflow = { id: "WF-BASIC", name: "Basic Resource Approval", status: "Active", steps: [{ id: "OWNER", name: "Owner Review", office: "$OWNER", sequence: 1 }] };
   const repo = {
     async get(table, key) {
       if (table === "Users") return { email: "requester@ust.edu.ph", name: "Requester", office: "CICS", role: "Requester", status: "Active" };

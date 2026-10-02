@@ -71,7 +71,8 @@
       "status": "Available",
       "requiresPayment": true,
       "fee": 850,
-      "driver": "With Driver"
+      "driver": "With Driver",
+      "workflowTemplateId": "WF-EVENT"
     },
     {
       "id": "R-006",
@@ -89,7 +90,8 @@
       "capacity": 8,
       "status": "Under Maintenance",
       "requiresPayment": false,
-      "driver": "With Driver"
+      "driver": "With Driver",
+      "workflowTemplateId": "WF-EVENT"
     },
     {
       "id": "R-007",
@@ -247,6 +249,22 @@
       "status": "Active"
     },
     {
+      "name": "OSG Office Admin",
+      "email": "osg.office.admin@ust.edu.ph",
+      "office": "OSG",
+      "role": "Office Admin",
+      "requesterType": "",
+      "status": "Active"
+    },
+    {
+      "name": "Dominican Residence Office Admin",
+      "email": "dominicanresidence.admin@ust.edu.ph",
+      "office": "Dominican Residence",
+      "role": "Office Admin",
+      "requesterType": "",
+      "status": "Active"
+    },
+    {
       "name": "OSG Admin",
       "email": "osg.admin@ust.edu.ph",
       "office": "OSG",
@@ -266,13 +284,6 @@
       "office": "CICS",
       "role": "Requester",
       "requesterType": "Student Org Rep",
-      "status": "Active"
-    },
-    {
-      "name": "Facilities Office Admin",
-      "email": "facilities.admin@ust.edu.ph",
-      "office": "Facilities Management",
-      "role": "Office Admin",
       "status": "Active"
     },
     {
@@ -355,8 +366,41 @@
           "id": "OWNER",
           "name": "Resource Owner Review",
           "office": "$OWNER",
-          "sequence": 1,
-          "condition": "always"
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "id": "WF-EVENT",
+      "name": "Event Vehicle Approval",
+      "resourceType": "Vehicle",
+      "status": "Active",
+      "steps": [
+        {
+          "id": "OWNER",
+          "name": "Resource Owner Review",
+          "office": "$OWNER",
+          "sequence": 1
+        },
+        {
+          "id": "SETUP",
+          "name": "Facilities Setup",
+          "office": "Facilities Management",
+          "sequence": 2,
+          "approvingBodyId": "AB-001"
+        },
+        {
+          "id": "OSG",
+          "name": "OSG Event Review",
+          "office": "OSG",
+          "sequence": 2,
+          "approvingBodyId": "AB-002"
+        },
+        {
+          "id": "PARKING",
+          "name": "Visitor Parking Review",
+          "office": "OSG",
+          "sequence": 2
         }
       ]
     }
@@ -367,30 +411,8 @@
       "defaultWorkflowTemplateId": "WF-BASIC",
       "maxReservationHours": 12,
       "paymentDeadlineHours": 24,
-      "parkingCapacity": 20,
-      "requirementOptions": [
-        {
-          "id": "setupRequired",
-          "label": "Setup or maintenance support",
-          "help": "Routes the request to Facilities when setup, room preparation, or maintenance work is needed.",
-          "status": "Active",
-          "locked": true
-        },
-        {
-          "id": "externalVisitors",
-          "label": "External visitors or guests",
-          "help": "Routes the request to OSG when people from outside the university will attend.",
-          "status": "Active",
-          "locked": true
-        },
-        {
-          "id": "parkingRequired",
-          "label": "Visitor parking",
-          "help": "Routes the request to OSG when visitor parking slots are needed.",
-          "status": "Active",
-          "locked": true
-        }
-      ]
+      "paymentInstructions": "Settle the exact fee with the resource-owning office after the final approval. Bring your reservation ID and pay at the office cashier, or ask the office for its bank or e-payment details. Upload the official receipt in My Requests before the payment window closes.",
+      "parkingCapacity": 20
     }
   ],
   "notifications": [

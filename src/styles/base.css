@@ -1005,7 +1005,8 @@ textarea:focus-visible {
   resize: vertical;
 }
 
-.field label {
+/* :not() keeps .file-button labels as inline buttons; they are styled controls, not field captions */
+.field label:not(.file-button) {
   display: block;
   margin-bottom: 7px;
   color: var(--muted);
@@ -1769,23 +1770,6 @@ tbody tr:hover {
   text-transform: uppercase;
 }
 
-.requirement-fields {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.requirement-fields legend {
-  grid-column: 1 / -1;
-  margin-bottom: 8px;
-  color: var(--ink-2);
-  font-size: 13px;
-  font-weight: 800;
-}
-
 .check-field {
   min-height: 48px;
   display: grid;
@@ -1800,10 +1784,6 @@ tbody tr:hover {
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-}
-
-.requirement-fields .check-field {
-  min-height: 80px;
 }
 
 .check-field input {
@@ -1834,16 +1814,6 @@ tbody tr:hover {
   font-weight: 600;
   line-height: 1.3;
   text-transform: none;
-}
-
-.requirement-manager {
-  display: grid;
-  gap: 18px;
-}
-
-.requirement-list {
-  display: grid;
-  gap: 10px;
 }
 
 .approval-assignment {
@@ -2056,13 +2026,31 @@ tbody tr:hover {
   font-size: 12px;
 }
 
-.workflow-step-row {
+/* Super Admin workflow editor: number, name, office, approving body, tier, remove. */
+.workflow-step-row:not(.workflow-step-row-compact) {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1.3fr) minmax(0, 1fr) 80px minmax(0, 1.2fr) 42px;
+  grid-template-columns: 28px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.1fr) 124px 42px;
   align-items: end;
   gap: 16px;
   border-top: 1px solid var(--line);
   padding: 20px 0;
+}
+
+/* Resource tier builder: number, name, office, tier, remove. */
+.workflow-step-row-compact {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1.3fr) minmax(0, 1.15fr) 124px 42px;
+  align-items: end;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  padding: 20px 0;
+}
+
+/* Office names are long; ellipsis keeps the row grid intact instead of a hard clip. */
+.workflow-step-row .select {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .workflow-step-number {
@@ -2083,25 +2071,100 @@ tbody tr:hover {
   height: 42px;
 }
 
+.workflow-add-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.workflow-add-step .field {
+  min-width: 220px;
+}
+
+/* Help text drops to its own row so the button stays aligned with the select, not the caption. */
+.workflow-add-step .workflow-add-step-note {
+  flex: 0 0 100%;
+  margin-top: -2px;
+}
+
+.workflow-tier-help {
+  margin: 0 0 14px;
+}
+
+/* Resource-level tier builder: a contained card so it reads as its own block in the resource form. */
+.resource-tier-builder {
+  display: grid;
+  gap: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fdfdfc;
+  padding: 20px;
+}
+
+.resource-tier-builder .workflow-step-editor {
+  margin-top: 0;
+}
+
+/* Payment next-steps editor in the Super Admin Payment settings tab. */
+.payment-step-editor {
+  display: grid;
+  gap: 14px;
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+
+.payment-step-editor h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.payment-step-editor h3 span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.payment-step-editor code {
+  background: #f0f1f3;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
+.payment-step-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: end;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.payment-step-row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@container (max-width: 760px) {
+  .payment-step-row {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .payment-step-row .field {
+    grid-column: 2;
+  }
+
+  .payment-step-row-actions {
+    grid-column: 2;
+  }
+}
+
 .workflow-catalog table {
   min-width: 560px;
-}
-
-.workflow-requirements-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 32px;
-  align-items: start;
-}
-
-.workflow-settings .requirement-manager {
-  display: block;
-}
-
-.workflow-settings .requirement-list {
-  gap: 0;
-  border-left: 1px solid var(--line);
-  padding-left: 28px;
 }
 
 .workflow-settings .list-item {
@@ -2118,31 +2181,59 @@ tbody tr:hover {
 }
 
 @container (max-width: 960px) {
-  .workflow-step-row {
-    grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 80px 42px;
+  /* Super Admin editor drops to two lines: name spans, then office / approving body / tier. */
+  .workflow-step-row:not(.workflow-step-row-compact) {
+    grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 42px;
   }
 
-  .workflow-step-row .field:first-of-type {
+  .workflow-step-row:not(.workflow-step-row-compact) .field:first-of-type {
     grid-column: 2 / 5;
   }
 
-  .workflow-step-row .field:nth-of-type(2) {
-    grid-column: 2;
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(2),
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(3) {
     grid-row: 2;
   }
 
-  .workflow-step-row .field:nth-of-type(3) {
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(2) {
+    grid-column: 2;
+  }
+
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(3) {
+    grid-column: 3;
+  }
+
+  .workflow-step-row:not(.workflow-step-row-compact) .field:last-of-type {
     grid-column: 4;
     grid-row: 2;
   }
 
-  .workflow-step-row .field:last-of-type {
+  .workflow-step-row:not(.workflow-step-row-compact) .danger-icon {
+    grid-column: 5;
+    grid-row: 1;
+  }
+
+  /* Resource tier builder: name spans, then office / tier. */
+  .workflow-step-row-compact {
+    grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 42px;
+  }
+
+  .workflow-step-row-compact .field:first-of-type {
+    grid-column: 2 / 4;
+  }
+
+  .workflow-step-row-compact .field:nth-of-type(2) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .workflow-step-row-compact .field:last-of-type {
     grid-column: 3;
     grid-row: 2;
   }
 
-  .workflow-step-row .danger-icon {
-    grid-column: 5;
+  .workflow-step-row-compact .danger-icon {
+    grid-column: 4;
     grid-row: 1;
   }
 }
@@ -2160,13 +2251,14 @@ tbody tr:hover {
     font-size: 12px;
   }
 
-  .workflow-details,
-  .workflow-requirements-layout {
+  .workflow-details {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .workflow-step-row {
-    grid-template-columns: minmax(0, 1fr) 80px 42px;
+  /* Both editors stack one field per line at the narrowest widths. */
+  .workflow-step-row:not(.workflow-step-row-compact),
+  .workflow-step-row-compact {
+    grid-template-columns: minmax(0, 1fr) 42px;
     gap: 16px 12px;
   }
 
@@ -2175,35 +2267,44 @@ tbody tr:hover {
     grid-row: 1;
   }
 
-  .workflow-step-row .field:first-of-type {
+  .workflow-step-row:not(.workflow-step-row-compact) .field:first-of-type,
+  .workflow-step-row-compact .field:first-of-type {
     grid-column: 1 / -1;
     grid-row: 2;
   }
 
-  .workflow-step-row .field:nth-of-type(2) {
-    grid-column: 1 / 3;
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(2),
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(3),
+  .workflow-step-row:not(.workflow-step-row-compact) .field:last-of-type,
+  .workflow-step-row-compact .field:nth-of-type(2),
+  .workflow-step-row-compact .field:last-of-type {
+    grid-column: 1 / -1;
+  }
+
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(2) {
     grid-row: 3;
   }
 
-  .workflow-step-row .field:nth-of-type(3) {
-    grid-column: 1;
+  .workflow-step-row:not(.workflow-step-row-compact) .field:nth-of-type(3) {
     grid-row: 4;
   }
 
-  .workflow-step-row .field:last-of-type {
-    grid-column: 1 / -1;
+  .workflow-step-row:not(.workflow-step-row-compact) .field:last-of-type {
     grid-row: 5;
   }
 
-  .workflow-step-row .danger-icon {
-    grid-column: 3;
-    grid-row: 1;
+  .workflow-step-row-compact .field:nth-of-type(2) {
+    grid-row: 3;
   }
 
-  .workflow-settings .requirement-list {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    padding: 24px 0 0;
+  .workflow-step-row-compact .field:last-of-type {
+    grid-row: 4;
+  }
+
+  .workflow-step-row:not(.workflow-step-row-compact) .danger-icon,
+  .workflow-step-row-compact .danger-icon {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 
@@ -3175,7 +3276,6 @@ tbody tr:hover {
   .login-screen,
   .role-grid,
   .requester-steps,
-  .requirement-fields,
   .settings-layout,
   .metrics-grid,
   .two-col,

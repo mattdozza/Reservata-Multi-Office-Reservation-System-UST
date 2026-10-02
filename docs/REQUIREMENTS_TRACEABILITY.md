@@ -18,7 +18,7 @@
 | Admin resource management | Resource Management add/edit/status/workflow/archive controls scoped to the owning office |
 | Super Admin user management | Users & Roles role and account access controls |
 | Office coverage management | Office Management add/edit/status/archive and Coverage screens |
-| Approval workflow maintenance | Super Admin Approval Workflows editor for ordered, parallel, and conditional steps |
+| Approval workflow maintenance | Super Admin Approval Workflows editor for ordered and parallel steps, plus resource-level tier building in Office Admin Resource Management |
 | OSG visitor request | New Visitor Request, available to Faculty/Staff/Student Org Rep affiliations |
 | OSG approval workflow | OSG Admin Visitor Requests and conditional Event Reviews |
 | Parking allocation | Parking screen |

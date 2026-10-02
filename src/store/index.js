@@ -16,7 +16,7 @@ import { notificationMethods } from "./notifications.js";
 import { paymentMethods } from "./payments.js";
 import { reservationMethods } from "./reservations.js";
 import { resourceMethods } from "./resources.js";
-import { defaultRequirementOptions, normalizeAssetTag, normalizePaymentDeadlineHours, normalizeResourceTags, uniqueNotifications } from "./shared.js";
+import { DEFAULT_PAYMENT_INSTRUCTIONS, DEFAULT_PAYMENT_STEPS, normalizeAssetTag, normalizePaymentDeadlineHours, normalizePaymentInstructions, normalizePaymentSteps, normalizeResourceTags, uniqueNotifications } from "./shared.js";
 import { visitorMethods } from "./visitors.js";
 
 export class ReservataStore {
@@ -78,9 +78,10 @@ export class ReservataStore {
         ...item,
         id: item.id || (index === 0 ? "SYSTEM" : nextId("SET")),
         paymentDeadlineHours: normalizePaymentDeadlineHours(item.paymentDeadlineHours),
-        requirementOptions: item.requirementOptions?.length ? item.requirementOptions : defaultRequirementOptions()
+        paymentInstructions: normalizePaymentInstructions(item.paymentInstructions) || DEFAULT_PAYMENT_INSTRUCTIONS,
+        paymentSteps: normalizePaymentSteps(item.paymentSteps)
       }))
-      : [{ id: "SYSTEM", paymentDeadlineHours: normalizePaymentDeadlineHours(), requirementOptions: defaultRequirementOptions() }];
+      : [{ id: "SYSTEM", paymentDeadlineHours: normalizePaymentDeadlineHours(), paymentInstructions: DEFAULT_PAYMENT_INSTRUCTIONS, paymentSteps: DEFAULT_PAYMENT_STEPS }];
     this.data.resources = this.data.resources.map((item) => ({
       ...item,
       assetTag: normalizeAssetTag(item.assetTag || item.id),
@@ -95,20 +96,13 @@ export class ReservataStore {
 
   get settings() {
     if (!this.data.systemSettings.length) {
-      this.data.systemSettings.push({ id: "SYSTEM", paymentDeadlineHours: normalizePaymentDeadlineHours(), requirementOptions: defaultRequirementOptions() });
+      this.data.systemSettings.push({ id: "SYSTEM", paymentDeadlineHours: normalizePaymentDeadlineHours(), paymentInstructions: DEFAULT_PAYMENT_INSTRUCTIONS, paymentSteps: DEFAULT_PAYMENT_STEPS });
     }
     const settings = this.data.systemSettings[0];
     settings.paymentDeadlineHours = normalizePaymentDeadlineHours(settings.paymentDeadlineHours);
-    if (!settings.requirementOptions?.length) settings.requirementOptions = defaultRequirementOptions();
+    settings.paymentInstructions = normalizePaymentInstructions(settings.paymentInstructions) || DEFAULT_PAYMENT_INSTRUCTIONS;
+    settings.paymentSteps = normalizePaymentSteps(settings.paymentSteps);
     return settings;
-  }
-
-  get allRequirementOptions() {
-    return this.settings.requirementOptions;
-  }
-
-  get requirementOptions() {
-    return this.allRequirementOptions.filter((item) => item.status !== "Archived");
   }
 
   get currentUser() {

@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { awsBackendConfigured } from "../services/awsApi.js";
-import { AlertTriangle, CheckCircle2, FileText, Info, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, CreditCard, FileText, Info, ShieldCheck, Upload, X } from "lucide-react";
 import { badgeClass, displayTimestamp, formatDate, tomorrowIso } from "../shared/utils.js";
-import { approvalProgress } from "../domain/workflows.js";
+import { approvalProgress, buildApprovalSteps } from "../domain/workflows.js";
+import { applyPaymentStepTokens } from "../store/shared.js";
 import ReservationTimeline from "./ReservationTimeline.jsx";
 import ResourcePhoto from "./ResourcePhoto.jsx";
 
@@ -201,6 +202,74 @@ export function DetailGrid({ items }) {
   );
 }
 
+/**
+ * Surfaces the single action the requester still has to take, or the stage the request is
+ * currently waiting on. Shown first in View Details so the next step is never buried.
+ */
+function ReservationNextStep({ store, reservation, payment }) {
+  const requesterView = store.session.activeRole === "requester";
+  const office = payment?.office || reservation.office;
+  let tone = "info";
+  let Icon = Clock3;
+  let title = "";
+  let detail = "";
+
+  if (reservation.status === "For Payment") {
+    const amount = `PHP ${Number(payment?.amount ?? 0).toLocaleString("en-PH")}`;
+    const deadline = payment?.paymentDeadlineAt ? displayTimestamp(payment.paymentDeadlineAt) : "";
+    if (payment?.status === "Awaiting Receipt" || !payment) {
+      tone = "action";
+      Icon = CreditCard;
+      title = "Upload your payment receipt";
+      detail = `Pay ${amount} to ${office}${deadline ? ` and upload the receipt before ${deadline}` : ""}. Close this window, then use the Upload Receipt button on the request. Accepted files are JPG, PNG, or PDF.`;
+    } else if (payment.status === "Pending Verification") {
+      tone = "progress";
+      Icon = Clock3;
+      title = "Waiting for payment verification";
+      detail = `${office} is checking your ${amount} receipt and will accept or reject it. You will be notified either way.`;
+    }
+  } else if (["Under Owner Review", "Under Additional Review", "Approved"].includes(reservation.status)) {
+    const waiting = (reservation.approvalSteps || []).find((step) => step.status === "Pending");
+    tone = "progress";
+    title = waiting ? `Waiting for ${waiting.office}` : "Waiting for approval";
+    detail = waiting
+      ? `${waiting.office} still needs to review this request. It moves to the next step, or to payment, once they decide.`
+      : "The assigned offices are reviewing this request.";
+  } else if (reservation.status === "Confirmed") {
+    tone = "done";
+    Icon = CheckCircle2;
+    title = "Reservation confirmed";
+    detail = "This booking is final. Use it as scheduled and report any conflict to the owning office.";
+  } else if (reservation.status === "Rejected") {
+    tone = "stopped";
+    Icon = AlertTriangle;
+    title = payment?.status === "Rejected" ? "Payment receipt rejected" : "Request rejected";
+    detail = reservation.rejectionReason || payment?.rejectionReason || "This request was declined. The reason is recorded above.";
+  } else if (reservation.status === "Expired") {
+    tone = "stopped";
+    Icon = AlertTriangle;
+    title = "Request expired";
+    detail = reservation.expiryReason || "This request expired before final confirmation and the time slot was released.";
+  } else if (["Cancelled", "Completed", "No Show"].includes(reservation.status)) {
+    tone = "done";
+    Icon = CheckCircle2;
+    title = `Request ${reservation.status.toLowerCase()}`;
+    detail = "This request is closed and no further action is needed.";
+  }
+
+  if (!title) return null;
+  return (
+    <div className={`next-step next-step-${tone}`} role="status">
+      <span className="next-step-icon" aria-hidden="true"><Icon size={18} /></span>
+      <div>
+        <strong>{title}</strong>
+        <p>{detail}</p>
+        {!requesterView && <small>Shown from the requester's point of view.</small>}
+      </div>
+    </div>
+  );
+}
+
 export function ReservationDetails({ store, reservation }) {
   const payment = store.data.payments.find((item) => item.id === reservation.paymentId)
     || store.data.payments.filter((item) => item.reservationId === reservation.id).sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0))[0];
@@ -208,6 +277,7 @@ export function ReservationDetails({ store, reservation }) {
   return (
     <>
       {resource?.photoKey && <ResourcePhoto resource={resource} />}
+      <ReservationNextStep store={store} reservation={reservation} payment={payment} />
       <DetailGrid items={[
         ["Request ID", reservation.id],
         ["Requester", reservation.requester],
@@ -216,13 +286,13 @@ export function ReservationDetails({ store, reservation }) {
         ["Schedule", `${formatDate(reservation.date)} ${reservation.start}-${reservation.end}`],
         ["Warning", reservation.status === "Expired" ? reservation.expiryReason || "Reservation expired before final confirmation." : store.isReservationOverdue(reservation) ? "Scheduled time has passed without final confirmation or rejection." : "None"],
         ["Quantity", reservation.quantity],
-        ["Payment", reservation.requiresPayment ? payment?.status || "Required" : "Not required"],
+        ...(reservation.requiresPayment ? [["Payment", payment?.status || "Required"]] : []),
         ["Decision reason", reservation.rejectionReason || "None"],
         ["Cancellation / expiry reason", reservation.cancellationReason || reservation.expiryReason || reservation.overrideReason || "None"],
         ["Purpose", reservation.purpose]
       ]} />
       <ApprovalTrail reservation={reservation} />
-      {payment && (
+      {reservation.requiresPayment && payment && (
         <div className="detail-section">
           <h3>Payment</h3>
           <DetailGrid items={[
@@ -545,6 +615,105 @@ export function ApprovalTrail({ reservation, compact = false }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Previews the exact route a request will take, including the receipt upload and
+ * payment verification stages that only apply to resources requiring payment.
+ */
+export function RequestJourney({ resource, template, deadlineHours }) {
+  if (!resource) return null;
+  const steps = buildApprovalSteps(template, resource, "REQ-PREVIEW");
+  const paid = Boolean(resource.requiresPayment);
+  const fee = Number(resource.fee || 0).toLocaleString("en-PH");
+  const stages = [
+    { key: "submit", icon: FileText, title: "Submit request", owner: "You", detail: "Your schedule and purpose are sent to the owning office." },
+    ...steps.map((step) => ({
+      key: step.id,
+      icon: ShieldCheck,
+      title: step.name,
+      owner: step.office,
+      detail: `${step.office} reviews your request.`
+    })),
+    ...(paid ? [
+      { key: "receipt", icon: Upload, title: "Upload payment receipt", owner: "You", detail: `Pay PHP ${fee} and upload the receipt within ${deadlineHours} hours.` },
+      { key: "verify", icon: CreditCard, title: "Payment verification", owner: resource.office, detail: `${resource.office} accepts or rejects your receipt.` }
+    ] : []),
+    { key: "done", icon: CheckCircle2, title: "Reservation confirmed", owner: "You", detail: paid ? "Once the receipt is accepted, the booking is final." : "Once every approval is granted, the booking is final." }
+  ];
+  return (
+    <ol className="request-journey" aria-label="What happens next">
+      {stages.map((stage) => {
+        const Icon = stage.icon;
+        return (
+          <li className="request-journey-step" key={stage.key}>
+            <span className="request-journey-marker" aria-hidden="true"><Icon size={14} /></span>
+            <div className="request-journey-body">
+              <strong>{stage.title}</strong>
+              <span className="request-journey-owner">{stage.owner}</span>
+              <small>{stage.detail}</small>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+/**
+ * Shown right after a paid request is submitted. The Super Admin authors both the
+ * `instructions` text and the numbered `steps` under System Settings -> Payment
+ * settings; `{fee}`, `{office}`, `{window}` and `{reservationId}` in a step are
+ * replaced with the live values for the request being viewed.
+ */
+export function PaymentInstructionsModal({ resource, deadlineHours, instructions = "", steps: authoredSteps, reservationId = "", onClose }) {
+  if (!resource) return null;
+  const fee = `PHP ${Number(resource.fee || 0).toLocaleString("en-PH")}`;
+  const steps = applyPaymentStepTokens(authoredSteps, {
+    fee,
+    office: resource.office,
+    window: deadlineHours,
+    reservationId
+  });
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="modal-panel payment-instructions" role="dialog" aria-modal="true" aria-label="Payment next steps" onMouseDown={(event) => event.stopPropagation()}>
+        <CardHeader
+          title="Next steps for this paid request"
+          subtitle={reservationId ? `${resource.name} · ${reservationId}` : resource.name}
+          action={<button className="icon-button" aria-label="Close payment instructions" onClick={onClose} type="button"><X size={17} /></button>}
+        />
+        <div className="modal-content">
+          <div className="payment-instructions-summary">
+            <div><span>Amount</span><strong>{fee}</strong></div>
+            <div><span>Paying office</span><strong>{resource.office}</strong></div>
+            <div><span>Payment window</span><strong>{deadlineHours} hours</strong></div>
+          </div>
+          <p className="detail-note">You are not charged now. Payment is only due after the approvals above are complete.</p>
+          {instructions && (
+            <div className="payment-instructions-note">
+              <strong>Payment instructions</strong>
+              <p>{instructions}</p>
+            </div>
+          )}
+          <ol className="payment-instructions-list">
+            {steps.map((step, index) => (
+              <li key={step.title}>
+                <span className="payment-instructions-number" aria-hidden="true">{index + 1}</span>
+                <div>
+                  <strong>{step.title}</strong>
+                  <small>{step.detail}</small>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="payment-instructions-actions">
+          <button className="secondary-button" onClick={onClose} type="button">Close</button>
+          <button className="primary-button" onClick={onClose} type="button">Go to My Requests</button>
+        </div>
+      </section>
     </div>
   );
 }

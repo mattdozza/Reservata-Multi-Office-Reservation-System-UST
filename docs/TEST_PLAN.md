@@ -51,7 +51,7 @@ Steps:
 2. Open New Request.
 3. Select a resource and date.
 4. Confirm the daily slot grid refreshes with available and unavailable slots.
-5. Fill time, quantity, purpose, and any additional requirements.
+5. Fill time, quantity, and purpose.
 6. Submit.
 
 Expected result:
@@ -347,14 +347,14 @@ Expected result:
 - Office Admin actions are limited to the assigned office.
 - Requester records are limited to the authenticated email.
 
-## TC-015 Conditional Multi-Office Approval
+## TC-015 Multi-Office Approval
 
 Steps:
 
-1. As Requester, reserve the Community Outreach Van and select setup support, external guests, and visitor parking.
-2. Confirm the preview contains one Simbahayan owner step followed by Facilities and two OSG steps at sequence 2.
+1. As Requester, reserve the Community Outreach Van.
+2. Confirm the preview contains one Simbahayan owner step followed by the setup office and two OSG steps at sequence 2.
 3. Approve the owner step as the Simbahayan Office Admin.
-4. Approve the setup step as the Facilities Office Admin.
+4. Approve the setup step as the office that owns that workflow step.
 5. Approve both event steps as OSG Admin.
 
 Expected result:

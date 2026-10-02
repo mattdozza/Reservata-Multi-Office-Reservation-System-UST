@@ -1,24 +1,19 @@
 import { HttpError } from "./http.mjs";
 
-function enabled(value) {
-  return value === true || value === "true" || value === "on" || value === "yes";
-}
-
-export function buildApprovalSteps(template, resource, request, reservationId) {
+export function buildApprovalSteps(template, resource, reservationId) {
   const source = template?.steps?.length
     ? template.steps
-    : [{ id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1, condition: "always" }];
-  const active = source
-    .filter((step) => step.condition === "always" || enabled(request[step.condition]))
-    .sort((left, right) => Number(left.sequence) - Number(right.sequence));
-  const firstSequence = Math.min(...active.map((step) => Number(step.sequence || 1)));
-  return active.map((step, index) => ({
+    : [{ id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1 }];
+  const ordered = [...source].sort(
+    (left, right) => Number(left.sequence || 1) - Number(right.sequence || 1),
+  );
+  const firstSequence = Math.min(...ordered.map((step) => Number(step.sequence || 1)));
+  return ordered.map((step, index) => ({
     id: `${reservationId}-${step.id || index + 1}`,
     templateStepId: step.id || `STEP-${index + 1}`,
     name: step.name,
     office: step.office === "$OWNER" ? resource.office : step.office,
     sequence: Number(step.sequence || 1),
-    condition: step.condition || "always",
     status: Number(step.sequence || 1) === firstSequence ? "Pending" : "Waiting",
     decidedBy: "",
     decidedAt: ""

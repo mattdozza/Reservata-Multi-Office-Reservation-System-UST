@@ -1,8 +1,16 @@
-const crypto = require("crypto");
+﻿const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const zlib = require("zlib");
+const { AsyncLocalStorage } = require("async_hooks");
+
+/**
+ * Lifecycle reminders can fire anywhere in a request, including the auth check that runs
+ * before the route handler. Tracking their ids per request lets a client save state it
+ * loaded before a reminder was due without that looking like a record deletion.
+ */
+const lifecycleRecords = new AsyncLocalStorage();
 
 const PORT = Number(process.env.PORT || 5178);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -61,7 +69,7 @@ const COMPRESSIBLE_STATIC_TYPES = new Set([".html", ".css", ".js", ".json", ".md
 
 const ROLE_MUTATIONS = {
   Requester: ["reservations", "payments", "visitors", "notifications", "activity"],
-  "Office Admin": ["resources", "reservations", "payments", "notifications", "activity"],
+  "Office Admin": ["resources", "reservations", "payments", "approvalTemplates", "notifications", "activity"],
   "Super Admin": ["resources", "people", "offices", "approvalTemplates", "systemSettings", "notifications", "activity"],
   "OSG Admin": ["reservations", "payments", "visitors", "notifications", "activity"]
 };
@@ -317,7 +325,7 @@ function deadlinePassed(deadline) {
 
 function appendNotification(database, user, message, type = "Reservation") {
   const office = database.offices.find((item) => item.name === user);
-  database.notifications.unshift({
+  const notification = {
     id: createRecordId("N"),
     user,
     ...(office ? { office: office.name } : {}),
@@ -325,7 +333,30 @@ function appendNotification(database, user, message, type = "Reservation") {
     type,
     unread: true,
     time: nowIso()
-  });
+  };
+  database.notifications.unshift(notification);
+  const created = createdRecords();
+  if (created) created.notifications.add(notification.id);
+  return notification;
+}
+
+function appendActivity(database, action, actor, target, details = "", time = nowIso()) {
+  const record = {
+    id: createRecordId("ACT"),
+    action,
+    actor,
+    target,
+    details,
+    time
+  };
+  database.activity.unshift(record);
+  const created = createdRecords();
+  if (created) created.activity.add(record.id);
+  return record;
+}
+
+function createdRecords() {
+  return lifecycleRecords.getStore();
 }
 
 function expireOverdueReservations(database) {
@@ -347,14 +378,7 @@ function expireOverdueReservations(database) {
       reservation.status = "Completed";
       reservation.completedAt = expiredAt;
       appendNotification(database, reservation.requester, `${reservation.resourceName} was completed after its scheduled use.`);
-      database.activity.unshift({
-        id: createRecordId("ACT"),
-        action: "Reservation completed",
-        actor: "System",
-        target: reservation.resourceName,
-        details: reservation.id,
-        time: expiredAt
-      });
+      appendActivity(database, "Reservation completed", "System", reservation.resourceName, reservation.id);
       changed += 1;
       continue;
     }
@@ -363,14 +387,14 @@ function expireOverdueReservations(database) {
     if (!paymentExpired && !scheduleExpired) {
       if (reservation.status === "For Payment" && payment?.status === "Awaiting Receipt" && !payment.paymentReminderSentAt) {
         payment.paymentReminderSentAt = expiredAt;
-        appendNotification(database, reservation.requester, `${reservation.resourceName} is awaiting receipt upload before ${payment.paymentDeadlineAt || "the payment deadline"}.`, "Payment");
+        appendNotification(database, reservation.requester, `${reservation.resourceName} is awaiting receipt upload before ${payment.paymentDeadlineAt || "the payment deadline"}.`);
         changed += 1;
       }
       if (["Under Owner Review", "Under Additional Review", "Approved"].includes(reservation.status) && !reservation.reviewReminderSentAt) {
         const submitted = new Date(reservation.submittedAt || reservation.createdAt || "").getTime();
         if (Number.isFinite(submitted) && Date.now() - submitted > 24 * 60 * 60 * 1000) {
           reservation.reviewReminderSentAt = expiredAt;
-          appendNotification(database, reservation.office, `${reservation.resourceName} has been waiting for review for more than 24 hours.`, "Approval");
+          appendNotification(database, reservation.office, `${reservation.resourceName} has been waiting for review for more than 24 hours.`);
           changed += 1;
         }
       }
@@ -399,14 +423,7 @@ function expireOverdueReservations(database) {
     }
     appendNotification(database, reservation.requester, `${reservation.resourceName} expired because ${paymentExpired ? "the payment deadline passed" : "the scheduled time passed before final confirmation"}.`);
     appendNotification(database, reservation.office, `${reservation.resourceName}: ${reservation.requester}'s request expired before final confirmation.`);
-    database.activity.unshift({
-      id: createRecordId("ACT"),
-      action: "Reservation expired",
-      actor: "System",
-      target: reservation.resourceName,
-      details: reservation.id,
-      time: expiredAt
-    });
+    appendActivity(database, "Reservation expired", "System", reservation.resourceName, reservation.id);
     changed += 1;
   }
   return changed;
@@ -416,6 +433,20 @@ function readLifecycleDatabase() {
   const database = normalizeState(readDatabase());
   if (expireOverdueReservations(database)) writeDatabase(database);
   return database;
+}
+
+/**
+ * Lifecycle reminders are server-generated. The client loads state before a reminder is
+ * due, so those records must be carried into a save instead of counting as client deletions.
+ */
+function preserveLifecycleRecords(after, database, created) {
+  for (const key of ["notifications", "activity"]) {
+    if (!created?.[key]?.size) continue;
+    const present = new Set(after[key].map((item) => item.id));
+    const injected = database[key].filter((item) => created[key].has(item.id) && !present.has(item.id));
+    if (injected.length) after[key] = [...after[key], ...injected];
+  }
+  return after;
 }
 
 function normalizeEmail(value) {
@@ -718,7 +749,10 @@ const MOCK_SSO_ENCRYPTION_SCRIPT = `(() => {
         new TextEncoder().encode(password.value)
       );
       encryptedPassword.value = base64(ciphertext);
+      // The plaintext is already captured, so drop it from the DOM and release the now-empty
+      // required field; otherwise the resubmit below fails native constraint validation.
       password.value = "";
+      password.required = false;
       encryptedSubmission = true;
       form.requestSubmit(event.submitter);
     } catch {
@@ -1043,6 +1077,10 @@ function assertScopedMutation(before, after, user, database) {
     if (changedReservations.some((item) => item.office !== user.office && !item.approvalSteps?.some((step) => step.office === user.office)) || changedResources.some((item) => item.office !== user.office)) {
       throw new HttpError(403, "Office Administrators may only change records assigned to their office.");
     }
+    const changedWorkflows = changedRecords(before, after, "approvalTemplates");
+    if (changedWorkflows.some((item) => item.office !== user.office)) {
+      throw new HttpError(403, "Office Administrators may only manage approval workflows created for their office.");
+    }
     const allowedTypes = OFFICE_RESOURCE_TYPES[user.office];
     if (allowedTypes && changedResources.some((item) => !allowedTypes.includes(item.type))) {
       throw new HttpError(400, `${user.office} can only manage ${allowedTypes.join(" or ")} resources.`);
@@ -1085,7 +1123,7 @@ function assertScopedMutation(before, after, user, database) {
   if (!(user.role === "OSG Admin" || canManageOwnVisitors) && changedVisitors.length) {
     throw new HttpError(403, `${user.role} cannot modify visitor records.`);
   }
-  if (user.role !== "Office Admin" && changedResources.length) {
+  if (!["Office Admin", "Super Admin"].includes(user.role) && changedResources.length) {
     throw new HttpError(403, `${user.role} cannot modify resources.`);
   }
   if (!["Requester", "Office Admin", "OSG Admin"].includes(user.role) && (changedReservations.length || changedPayments.length)) {
@@ -1307,7 +1345,7 @@ async function handleApi(request, response, url) {
   if (pathname === "/api/state" && request.method === "PUT") {
     const database = readLifecycleDatabase();
     const before = scopedState(database, user);
-    const after = sanitizeState(await readBody(request));
+    const after = preserveLifecycleRecords(sanitizeState(await readBody(request)), database, createdRecords());
     assertScopedMutation(before, after, user, database);
     for (const resource of after.resources) {
       const previous = database.resources.find((item) => item.id === resource.id);
@@ -1380,7 +1418,8 @@ function createServer() {
     try {
       const url = new URL(request.url, `http://${request.headers.host}`);
       if (url.pathname.startsWith("/api/")) {
-        await handleApi(request, response, url);
+        // Scope lifecycle tracking to the whole request, including the auth check.
+        await lifecycleRecords.run({ notifications: new Set(), activity: new Set() }, () => handleApi(request, response, url));
         return;
       }
       if (url.pathname.startsWith("/mock-sso/")) {

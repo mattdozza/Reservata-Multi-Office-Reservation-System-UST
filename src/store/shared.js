@@ -1,5 +1,4 @@
 import { todayIso, tomorrowIso } from "../shared/utils.js";
-import { REQUIREMENT_OPTIONS } from "../domain/workflows.js";
 
 export const BLOCKING_RESERVATION_STATUSES = ["Under Owner Review", "Under Additional Review", "Approved", "Confirmed", "For Payment", "In Use"];
 export const RESOLVED_RESERVATION_STATUSES = ["Rejected", "Cancelled", "Completed", "Expired", "No Show"];
@@ -8,6 +7,40 @@ export const CLOSED_PAYMENT_STATUSES = ["Verified", "Rejected", "Cancelled", "Ex
 export const DEFAULT_PAYMENT_DEADLINE_HOURS = 24;
 export const MIN_PAYMENT_DEADLINE_HOURS = 1;
 export const MAX_PAYMENT_DEADLINE_HOURS = 168;
+export const MIN_PAYMENT_INSTRUCTIONS_LENGTH = 10;
+export const MAX_PAYMENT_INSTRUCTIONS_LENGTH = 1200;
+export const DEFAULT_PAYMENT_INSTRUCTIONS = "Settle the exact fee with the resource-owning office after the final approval. Bring your reservation ID and pay at the office cashier, or ask the office for its bank or e-payment details. Upload the official receipt in My Requests before the payment window closes.";
+export const MIN_PAYMENT_STEPS = 1;
+export const MAX_PAYMENT_STEPS = 8;
+export const MIN_PAYMENT_STEP_TITLE_LENGTH = 3;
+export const MAX_PAYMENT_STEP_FIELD_LENGTH = 200;
+
+/**
+ * Admin-authored next steps for the paid-request modal. `{fee}`, `{office}`,
+ * `{window}` and `{reservationId}` are replaced with the live values per request.
+ */
+export const DEFAULT_PAYMENT_STEPS = [
+  {
+    title: "Wait for the approvals to finish",
+    detail: "Each office reviews the request in turn. Your request moves to For Payment only after every required approval is granted."
+  },
+  {
+    title: "Pay {fee} to {office}",
+    detail: "Settle the fee within {window} hours after the final approval. The window is set when the payment handoff is created."
+  },
+  {
+    title: "Upload your receipt from My Requests",
+    detail: "Open My Requests, find this reservation, and use Upload Receipt. Accepted files are JPG, PNG, or PDF under 700 KB."
+  },
+  {
+    title: "{office} verifies the receipt",
+    detail: "The office either accepts it, which confirms the reservation, or rejects it with a written reason you can read immediately."
+  },
+  {
+    title: "Missing the window expires the request",
+    detail: "If the payment window passes with no receipt uploaded, the reservation is marked Expired and the time slot is released."
+  }
+];
 export const MAX_RECEIPT_PREVIEW_BYTES = 700_000;
 export const BUSINESS_DAY_START = 8 * 60;
 export const BUSINESS_DAY_END = 17 * 60;
@@ -113,6 +146,57 @@ export function requirePaymentDeadlineHours(value, label = "Payment deadline") {
   return number;
 }
 
+export function normalizePaymentInstructions(value) {
+  return String(value ?? "").trim().slice(0, MAX_PAYMENT_INSTRUCTIONS_LENGTH);
+}
+
+export function requirePaymentInstructions(value, label = "Payment instructions") {
+  const text = normalizePaymentInstructions(value);
+  if (text.length < MIN_PAYMENT_INSTRUCTIONS_LENGTH) {
+    throw new Error(`${label} must be at least ${MIN_PAYMENT_INSTRUCTIONS_LENGTH} characters.`);
+  }
+  return text;
+}
+
+export function normalizePaymentSteps(value) {
+  const source = Array.isArray(value) ? value : DEFAULT_PAYMENT_STEPS;
+  return source
+    .map((step) => ({
+      title: String(step?.title ?? "").trim().slice(0, MAX_PAYMENT_STEP_FIELD_LENGTH),
+      detail: String(step?.detail ?? "").trim().slice(0, MAX_PAYMENT_STEP_FIELD_LENGTH)
+    }))
+    .filter((step) => step.title)
+    .slice(0, MAX_PAYMENT_STEPS);
+}
+
+export function requirePaymentSteps(value, label = "Payment steps") {
+  const steps = normalizePaymentSteps(value);
+  if (steps.length < MIN_PAYMENT_STEPS) {
+    throw new Error(`${label} needs at least ${MIN_PAYMENT_STEPS} step.`);
+  }
+  const tooShort = steps.find((step) => step.title.length < MIN_PAYMENT_STEP_TITLE_LENGTH);
+  if (tooShort) {
+    throw new Error(`${label} titles must be at least ${MIN_PAYMENT_STEP_TITLE_LENGTH} characters.`);
+  }
+  return steps;
+}
+
+/** Replaces the supported tokens so admin wording stays editable while live values stay accurate. */
+export function applyPaymentStepTokens(steps, values = {}) {
+  return normalizePaymentSteps(steps).map((step) => ({
+    title: step.title
+      .replaceAll("{fee}", values.fee ?? "")
+      .replaceAll("{office}", values.office ?? "")
+      .replaceAll("{window}", values.window ?? "")
+      .replaceAll("{reservationId}", values.reservationId ?? ""),
+    detail: step.detail
+      .replaceAll("{fee}", values.fee ?? "")
+      .replaceAll("{office}", values.office ?? "")
+      .replaceAll("{window}", values.window ?? "")
+      .replaceAll("{reservationId}", values.reservationId ?? "")
+  }));
+}
+
 export function effectivePaymentDeadlineHours(resource, settings = {}) {
   return normalizePaymentDeadlineHours(
     resource?.paymentDeadlineHours,
@@ -169,10 +253,6 @@ export function addDaysIso(date, days) {
 
 export function isUstSsoEmail(email) {
   return /^[^\s@]+@ust\.edu\.ph$/i.test(email);
-}
-
-export function defaultRequirementOptions() {
-  return REQUIREMENT_OPTIONS.map((option) => ({ ...option, status: "Active", locked: true }));
 }
 
 export function notificationWithOffice(notification, offices) {

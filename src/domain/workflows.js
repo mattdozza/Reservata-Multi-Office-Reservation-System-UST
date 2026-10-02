@@ -1,50 +1,18 @@
-export const REQUIREMENT_OPTIONS = [
-  {
-    id: "setupRequired",
-    label: "Setup or maintenance support",
-    help: "Routes the request to Facilities when setup, room preparation, or maintenance work is needed."
-  },
-  {
-    id: "externalVisitors",
-    label: "External visitors or guests",
-    help: "Routes the request to OSG when people from outside the university will attend."
-  },
-  {
-    id: "parkingRequired",
-    label: "Visitor parking",
-    help: "Routes the request to OSG when visitor parking slots are needed."
-  }
-];
-
-export const WORKFLOW_CONDITIONS = [
-  ["always", "Always required"],
-  ...REQUIREMENT_OPTIONS.map((option) => [option.id, `When ${option.label.toLowerCase()} is selected`])
-];
-
-function enabled(value) {
-  return value === true || value === "true" || value === "on" || value === "yes";
-}
-
-export function conditionMatches(condition, request) {
-  return condition === "always" || enabled(request[condition]);
-}
-
-export function buildApprovalSteps(template, resource, request, reservationId) {
+export function buildApprovalSteps(template, resource, reservationId) {
   const source = template?.steps?.length
     ? template.steps
-    : [{ id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1, condition: "always" }];
-  const active = source
-    .filter((step) => conditionMatches(step.condition || "always", request))
-    .sort((left, right) => Number(left.sequence) - Number(right.sequence));
-  const firstSequence = Math.min(...active.map((step) => Number(step.sequence || 1)));
+    : [{ id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1 }];
+  const ordered = [...source].sort(
+    (left, right) => Number(left.sequence || 1) - Number(right.sequence || 1),
+  );
+  const firstSequence = Math.min(...ordered.map((step) => Number(step.sequence || 1)));
 
-  return active.map((step, index) => ({
+  return ordered.map((step, index) => ({
     id: `${reservationId}-${step.id || index + 1}`,
     templateStepId: step.id || `STEP-${index + 1}`,
     name: step.name,
     office: step.office === "$OWNER" ? resource.office : step.office,
     sequence: Number(step.sequence || 1),
-    condition: step.condition || "always",
     status: Number(step.sequence || 1) === firstSequence ? "Pending" : "Waiting",
     decidedBy: "",
     decidedAt: ""
@@ -68,7 +36,6 @@ export function hydrateLegacyReservation(reservation) {
       name: "Resource Owner Review",
       office: reservation.office,
       sequence: 1,
-      condition: "always",
       status,
       decidedBy: status === "Pending" ? "" : "Legacy migration",
       decidedAt: ""
@@ -117,4 +84,47 @@ export function approvalProgress(reservation) {
   const steps = reservation.approvalSteps || [];
   const completed = steps.filter((step) => ["Approved", "Skipped"].includes(step.status)).length;
   return { completed, total: steps.length };
+}
+
+/**
+ * First-Come, First-Served ordering for requests competing for the same resource and
+ * schedule. Overlapping pending requests are grouped so an approver can only confirm
+ * the earliest one; the rest are surfaced with their queue position.
+ */
+export function submittedAtMs(reservation) {
+  const parsed = Date.parse(reservation?.submittedAt || "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareSubmission(left, right) {
+  const leftMs = submittedAtMs(left);
+  const rightMs = submittedAtMs(right);
+  if (leftMs !== null && rightMs !== null && leftMs !== rightMs) return leftMs - rightMs;
+  if (leftMs !== null && rightMs === null) return -1;
+  if (leftMs === null && rightMs !== null) return 1;
+  // Deterministic tiebreak so seeded records without a parseable timestamp keep a stable order.
+  return String(left?.id || "").localeCompare(String(right?.id || ""), undefined, { numeric: true });
+}
+
+export function competingRequests(reservation, reservations) {
+  if (!reservation?.resourceId || !reservation?.date) return [];
+  const openStatuses = ["Under Owner Review", "Under Additional Review", "Approved", "For Payment", "In Use", "Confirmed"];
+  return (reservations || [])
+    .filter((item) =>
+      item.id !== reservation.id
+      && item.resourceId === reservation.resourceId
+      && item.date === reservation.date
+      && openStatuses.includes(item.status)
+      && reservation.start < item.end
+      && reservation.end > item.start)
+    .sort(compareSubmission);
+}
+
+/** Returns the request's place in its FCFS queue, or null when nothing competes with it. */
+export function fcfsQueue(reservation, reservations) {
+  const competing = competingRequests(reservation, reservations);
+  if (!competing.length) return null;
+  const ordered = [...competing, reservation].sort(compareSubmission);
+  const position = ordered.findIndex((item) => item.id === reservation.id) + 1;
+  return { position, total: ordered.length, competingIds: ordered.map((item) => item.id) };
 }

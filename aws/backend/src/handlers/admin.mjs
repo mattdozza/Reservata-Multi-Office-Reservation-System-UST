@@ -6,7 +6,8 @@ import {
   DEFAULT_PAYMENT_DEADLINE_HOURS,
   MAX_PAYMENT_DEADLINE_HOURS,
   MIN_PAYMENT_DEADLINE_HOURS,
-  normalizePaymentDeadlineHours
+  normalizePaymentDeadlineHours,
+  normalizePaymentSteps
 } from "../lib/reservationLifecycle.mjs";
 import { TABLES } from "../lib/tables.mjs";
 
@@ -36,16 +37,6 @@ function settingsFrom(body, existing = {}) {
   if (!Number.isInteger(paymentDeadlineHours) || paymentDeadlineHours < MIN_PAYMENT_DEADLINE_HOURS || paymentDeadlineHours > MAX_PAYMENT_DEADLINE_HOURS) {
     throw new HttpError(400, `Payment deadline must be a whole number from ${MIN_PAYMENT_DEADLINE_HOURS} to ${MAX_PAYMENT_DEADLINE_HOURS} hours.`);
   }
-  const requirementOptions = Array.isArray(body.requirementOptions)
-    ? body.requirementOptions.map((option) => ({
-      id: String(option.id || "").trim(),
-      label: String(option.label || "").trim(),
-      help: String(option.help || "").trim(),
-      status: option.status === "Archived" ? "Archived" : "Active",
-      locked: Boolean(option.locked)
-    })).filter((option) => option.id && option.label && option.help)
-    : existing.requirementOptions;
-
   return {
     ...existing,
     id: "SYSTEM",
@@ -53,7 +44,8 @@ function settingsFrom(body, existing = {}) {
     maxReservationHours: body.maxReservationHours ?? existing.maxReservationHours,
     parkingCapacity: body.parkingCapacity ?? existing.parkingCapacity,
     paymentDeadlineHours: normalizePaymentDeadlineHours(paymentDeadlineHours),
-    requirementOptions,
+    paymentInstructions: String(body.paymentInstructions ?? existing.paymentInstructions ?? "").trim().slice(0, 1200),
+    paymentSteps: normalizePaymentSteps(body.paymentSteps ?? existing.paymentSteps),
     updatedAt: now()
   };
 }
@@ -64,18 +56,19 @@ function workflowFrom(body, existing = {}) {
     name: String(step.name || "").trim(),
     office: step.office,
     sequence: Number(step.sequence || 1),
-    condition: step.condition || "always",
     approvingBodyId: step.approvingBodyId || ""
   }));
   if (!String(body.name || existing.name || "").trim() || !steps.some((step) => step.office === "$OWNER" && step.sequence === 1)) {
     throw new HttpError(400, "A workflow needs a name and a sequence-one Resource Owner step.");
   }
+  const office = String(body.office ?? existing.office ?? "").trim();
   return {
     ...existing,
     name: String(body.name || existing.name).trim(),
     resourceType: body.resourceType || existing.resourceType || "All",
     status: body.status || existing.status || "Active",
     steps,
+    ...(office ? { office } : {}),
     updatedAt: now()
   };
 }
@@ -289,9 +282,15 @@ export function createHandler(repo = repository) {
     }
 
     if (route === "workflows" && requestMethod === "POST") {
-      requireRole(user, ROLES.superAdmin);
+      requireRole(user, ROLES.superAdmin, ROLES.officeAdmin);
       const createdAt = now();
       const workflow = { ...workflowFrom(parseBody(event)), id: createId("WF"), createdAt };
+      if (user.role === ROLES.officeAdmin) {
+        if (workflow.office && workflow.office !== user.office) {
+          throw new HttpError(403, "Office Administrators can only create approval workflows for their office.");
+        }
+        workflow.office = user.office;
+      }
       await repo.transact([
         { Put: { TableName: TABLES.approvalWorkflows, Item: workflow, ConditionExpression: "attribute_not_exists(id)" } },
         { Put: { TableName: TABLES.activity, Item: activityRecord(user, "Approval workflow created", workflow.name) } }
@@ -300,9 +299,12 @@ export function createHandler(repo = repository) {
     }
 
     if (route === "workflow-item" && requestMethod === "PATCH") {
-      requireRole(user, ROLES.superAdmin);
+      requireRole(user, ROLES.superAdmin, ROLES.officeAdmin);
       const existing = await repo.get(TABLES.approvalWorkflows, { id: event.pathParameters?.id });
       if (!existing) throw new HttpError(404, "Approval workflow not found.");
+      if (user.role === ROLES.officeAdmin && existing.office !== user.office) {
+        throw new HttpError(403, "Office Administrators can only edit approval workflows created for their office.");
+      }
       const workflow = workflowFrom(parseBody(event), existing);
       if (workflow.status === "Archived") {
         const resources = await repo.scan(TABLES.resources);

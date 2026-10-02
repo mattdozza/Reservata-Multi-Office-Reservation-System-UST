@@ -1,6 +1,6 @@
 import ManagedForm from "../../components/ManagedForm.jsx";
 import { useEffect, useState } from "react";
-import { Archive, ChevronLeft, ChevronRight, Edit3, Save, Upload } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, Edit3, Plus, Save, Trash2, Upload } from "lucide-react";
 import { Badge, CardHeader, EmptyState } from "../../components/Common.jsx";
 import { PageTabs, TabPanel } from "../../components/PageTabs.jsx";
 import ResourcePhoto from "../../components/ResourcePhoto.jsx";
@@ -45,7 +45,20 @@ function resourceDraft(resource, store) {
     closeTime: "",
     blockedDates: [],
     workflowTemplateId: "WF-BASIC",
+    slotDuration: 60,
+    minBookingHours: 1,
+    maxBookingHours: 4,
+    bufferMinutes: 0,
+    maxAdvanceDays: 30,
   };
+}
+
+function ownerTierStep() {
+  return { id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1, approvingBodyId: "" };
+}
+
+function emptyTierBuilder() {
+  return { open: false, workflowId: "", name: "", steps: [ownerTierStep()] };
 }
 
 function isMaintenanceBlock(block) {
@@ -162,6 +175,154 @@ function AvailabilityCalendarCard({ store, resource, resourceId, onAction, onDra
   );
 }
 
+function ResourceTierBuilder({ store, builder, setBuilder }) {
+  const [newTier, setNewTier] = useState(2);
+  const steps = builder.steps;
+  const highestTier = Math.max(1, ...steps.map((step) => Number(step.sequence) || 1));
+  const tierOptions = Array.from({ length: highestTier + 1 }, (_, index) => index + 1);
+  const newTierValue = Math.min(Math.max(2, Number(newTier) || 2), highestTier + 1);
+  const otherOffices = store.data.offices.filter(
+    (office) => office.status === "Active" && office.name !== store.officeScope,
+  );
+
+  const updateStep = (index, field, value) =>
+    setBuilder((current) => ({
+      ...current,
+      steps: current.steps.map((step, stepIndex) => (stepIndex === index ? { ...step, [field]: value } : step)),
+    }));
+
+  function addStep() {
+    setBuilder((current) => ({
+      ...current,
+      steps: [
+        ...current.steps,
+        {
+          id: `STEP-${Date.now()}`,
+          name: "Supporting Office Review",
+          office: otherOffices[0]?.name || "OSG",
+          sequence: newTierValue,
+        },
+      ],
+    }));
+  }
+
+  function removeStep(index) {
+    if (index === 0) return;
+    setBuilder((current) => ({ ...current, steps: current.steps.filter((_, stepIndex) => stepIndex !== index) }));
+  }
+
+  return (
+    <div className="field span-2 resource-tier-builder">
+      <div className="field">
+        <label htmlFor="resource-workflow-name">Workflow name</label>
+        <input
+          id="resource-workflow-name"
+          className="input"
+          value={builder.name}
+          onChange={(event) => setBuilder((current) => ({ ...current, name: event.target.value }))}
+          required
+        />
+      </div>
+      <div className="workflow-step-editor">
+        <h3>
+          Approval tiers{" "}
+          <span>{steps.length} step{steps.length === 1 ? "" : "s"} · {highestTier} tier{highestTier === 1 ? "" : "s"}</span>
+        </h3>
+        <p className="field-help workflow-tier-help">
+          Tier 1 is the resource owner. Add another tier to route the request to another office; steps that share a tier are reviewed in parallel.
+        </p>
+        {steps.map((step, index) => (
+          <div className="workflow-step-row workflow-step-row-compact" key={step.id}>
+            <span className="workflow-step-number" aria-label={`Step ${index + 1}`}>{index + 1}</span>
+            <div className="field">
+              <label htmlFor={`tier-step-name-${step.id}`}>Step name</label>
+              <input
+                id={`tier-step-name-${step.id}`}
+                className="input"
+                value={step.name}
+                onChange={(event) => updateStep(index, "name", event.target.value)}
+                required
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`tier-step-office-${step.id}`}>Approving office</label>
+              <select
+                id={`tier-step-office-${step.id}`}
+                className="select"
+                value={step.office}
+                disabled={index === 0}
+                onChange={(event) => updateStep(index, "office", event.target.value)}
+              >
+                <option value="$OWNER">Resource Owner ({store.officeScope})</option>
+                {otherOffices.map((office) => (
+                  <option key={office.id} value={office.name}>{office.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`tier-step-tier-${step.id}`}>Approval tier</label>
+              <select
+                id={`tier-step-tier-${step.id}`}
+                className="select"
+                value={Number(step.sequence) || 1}
+                disabled={index === 0}
+                onChange={(event) => updateStep(index, "sequence", event.target.value)}
+              >
+                {index === 0 ? (
+                  <option value={1}>Tier 1 · owner</option>
+                ) : (
+                  tierOptions
+                    .filter((tier) => tier !== 1)
+                    .map((tier) => (
+                      <option key={tier} value={tier}>
+                        Tier {tier}{tier === highestTier + 1 ? " (new)" : ""}
+                      </option>
+                    ))
+                )}
+              </select>
+            </div>
+            <button
+              className="icon-button danger-icon"
+              aria-label={`Remove ${step.name}`}
+              disabled={index === 0}
+              onClick={() => removeStep(index)}
+              title={index === 0 ? "The owner review is required" : "Remove step"}
+              type="button"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        <div className="workflow-add-step">
+          <div className="field">
+            <label htmlFor="resource-new-tier">Approval tier for the new step</label>
+            <select
+              id="resource-new-tier"
+              className="select"
+              value={newTierValue}
+              onChange={(event) => setNewTier(event.target.value)}
+            >
+              {tierOptions
+                .filter((tier) => tier !== 1)
+                .map((tier) => (
+                  <option key={tier} value={tier}>
+                    Tier {tier}{tier === highestTier + 1 ? " (new tier)" : ""}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <button className="secondary-button icon-text-button" onClick={addStep} type="button">
+            <Plus size={16} /> Add approval step
+          </button>
+          <small className="field-help workflow-add-step-note">
+            Steps that share a tier are reviewed together in parallel.
+          </small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function OfficeSettingsView({ store, onAction }) {
   const [activeTab, setActiveTab] = useState("inventory");
   const [photoError, setPhotoError] = useState("");
@@ -169,12 +330,16 @@ export function OfficeSettingsView({ store, onAction }) {
   const [selectedId, setSelectedId] = useState("");
   const selected = store.officeResources.find((item) => item.id === selectedId);
   const [draft, setDraft] = useState(resourceDraft(null, store));
+  const [tierBuilder, setTierBuilder] = useState(emptyTierBuilder());
   const workflows = store.data.approvalTemplates.filter(
     (item) => item.status === "Active",
   );
   const officeTypes = allowedResourceTypes(store.officeScope) || RESOURCE_TYPES;
 
-  useEffect(() => setDraft(resourceDraft(selected, store)), [selectedId, store.officeScope, store.data.resources.length]);
+  useEffect(() => {
+    setDraft(resourceDraft(selected, store));
+    setTierBuilder(emptyTierBuilder());
+  }, [selectedId, store.officeScope, store.data.resources.length]);
 
   function update(field, value) {
     if (field === "type" && !selectedId) {
@@ -190,14 +355,59 @@ export function OfficeSettingsView({ store, onAction }) {
     setDraft((current) => ({ ...current, [field]: value }));
   }
 
+  function toggleTierBuilder(checked) {
+    if (!checked) {
+      setTierBuilder((current) => ({ ...current, open: false }));
+      return;
+    }
+    const currentWorkflow = store.data.approvalTemplates.find((item) => item.id === draft.workflowTemplateId);
+    if (currentWorkflow && currentWorkflow.office === store.officeScope) {
+      setTierBuilder({
+        open: true,
+        workflowId: currentWorkflow.id,
+        name: currentWorkflow.name,
+        steps: structuredClone(currentWorkflow.steps || [ownerTierStep()]),
+      });
+      return;
+    }
+    setTierBuilder({
+      open: true,
+      workflowId: "",
+      name: `${draft.name || "Resource"} Approval`,
+      steps: [ownerTierStep()],
+    });
+  }
+
   async function submit(event) {
     event.preventDefault();
     const previousIds = selectedId ? null : new Set(store.officeResources.map((item) => item.id));
+    let createdWorkflowId = "";
     const saved = await onAction(
-      () => store.saveResource(draft, selectedId),
+      async () => {
+        let workflowTemplateId = draft.workflowTemplateId;
+        if (tierBuilder.open) {
+          const workflow = await store.saveWorkflow(
+            {
+              id: tierBuilder.workflowId || undefined,
+              name: tierBuilder.name,
+              resourceType: draft.type,
+              status: "Active",
+              office: store.officeScope || undefined,
+              steps: tierBuilder.steps,
+            },
+            tierBuilder.workflowId || "",
+          );
+          workflowTemplateId = workflow.id;
+          createdWorkflowId = workflow.id;
+        }
+        await store.saveResource({ ...draft, workflowTemplateId }, selectedId);
+      },
       selectedId ? "Resource updated." : "Resource created.",
     );
     if (!saved) return;
+    if (createdWorkflowId) {
+      setTierBuilder((current) => ({ ...current, workflowId: createdWorkflowId }));
+    }
     const created = previousIds && store.officeResources.find((item) => !previousIds.has(item.id));
     if (created) {
       setSelectedId(created.id);
@@ -354,12 +564,77 @@ export function OfficeSettingsView({ store, onAction }) {
             <article className="card resource-editor-card">
               <CardHeader title="Booking rules and payment" subtitle="Approval steps, fees and driver requirements." />
               <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="resource-slot-duration">Slot duration (minutes)</label>
+                  <select
+                    id="resource-slot-duration"
+                    className="select"
+                    value={draft.slotDuration}
+                    onChange={(event) => update("slotDuration", Number(event.target.value))}
+                  >
+                    <option value={15}>15 minutes</option>
+                    <option value={30}>30 minutes</option>
+                    <option value={60}>60 minutes</option>
+                    <option value={90}>90 minutes</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="resource-buffer">Buffer time (minutes)</label>
+                  <input
+                    id="resource-buffer"
+                    className="input"
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={draft.bufferMinutes}
+                    onChange={(event) => update("bufferMinutes", Number(event.target.value))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="resource-min-hours">Min booking (hours)</label>
+                  <input
+                    id="resource-min-hours"
+                    className="input"
+                    type="number"
+                    min="0.5"
+                    max="24"
+                    step="0.5"
+                    value={draft.minBookingHours}
+                    onChange={(event) => update("minBookingHours", Number(event.target.value))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="resource-max-hours">Max booking (hours)</label>
+                  <input
+                    id="resource-max-hours"
+                    className="input"
+                    type="number"
+                    min="0.5"
+                    max="72"
+                    step="0.5"
+                    value={draft.maxBookingHours}
+                    onChange={(event) => update("maxBookingHours", Number(event.target.value))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="resource-max-advance">Max advance booking (days)</label>
+                  <input
+                    id="resource-max-advance"
+                    className="input"
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={draft.maxAdvanceDays}
+                    onChange={(event) => update("maxAdvanceDays", Number(event.target.value))}
+                  />
+                </div>
                 <div className="field span-2">
                   <label htmlFor="resource-workflow">Approval workflow</label>
                   <select
                     id="resource-workflow"
                     className="select"
                     value={draft.workflowTemplateId}
+                    disabled={tierBuilder.open}
                     onChange={(event) =>
                       update("workflowTemplateId", event.target.value)
                     }
@@ -371,7 +646,21 @@ export function OfficeSettingsView({ store, onAction }) {
                       </option>
                     ))}
                   </select>
+                  <small className="field-help">
+                    Choose a saved workflow, or build custom tiers for this resource below.
+                  </small>
                 </div>
+                <label className="check-field span-2">
+                  <input
+                    checked={tierBuilder.open}
+                    onChange={(event) => toggleTierBuilder(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>Build custom approval tiers for this resource</span>
+                </label>
+                {tierBuilder.open && (
+                  <ResourceTierBuilder store={store} builder={tierBuilder} setBuilder={setTierBuilder} />
+                )}
                 {draft.type === "Vehicle" && (
                   <div className="field span-2">
                     <label htmlFor="resource-driver">Driver requirement</label>

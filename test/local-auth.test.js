@@ -25,7 +25,7 @@ const ACCOUNTS = [
   ["all.offices.admin@ust.edu.ph", "SuperAdmin2026!", "Super Admin"],
   ["osg.admin@ust.edu.ph", "OsgAdmin2026!", "OSG Admin"],
   ["cics.visitor.requester@ust.edu.ph", "Visitor2026!", "Requester"],
-  ["facilities.admin@ust.edu.ph", "Facilities2026!", "Office Admin"]
+  ["dominicanresidence.admin@ust.edu.ph", "DominicanResidence2026!", "Office Admin"]
 ];
 
 test("mock UST SSO completes an authorization-code PKCE flow with a single-use code", async () => {
@@ -76,6 +76,11 @@ test("mock UST SSO completes an authorization-code PKCE flow with a single-use c
     assert.doesNotMatch(html, /<select/);
     assert.doesNotMatch(html, /student\.body\.requester@ust\.edu\.ph/);
     assert.doesNotMatch(html, /Requester2026!/);
+
+    const encryptionScript = await (await fetch(`${base}/mock-sso/encrypt.js`)).text();
+    assert.match(encryptionScript, /encryptedPassword\.value = base64\(ciphertext\);/);
+    // Clearing the plaintext must not leave the required password field blocking the resubmit.
+    assert.match(encryptionScript, /password\.value = "";\s*password\.required = false;\s*encryptedSubmission = true;\s*form\.requestSubmit\(event\.submitter\);/);
 
     const hostile = await fetch(`${base}/mock-sso/authorize?${new URLSearchParams({ ...request, redirect_uri: "https://example.com/steal" })}`);
     assert.equal(hostile.status, 400);
@@ -455,7 +460,7 @@ test("supporting office can approve final step and create owner payment handoff"
     workflowTemplateId: "WF-EVENT",
     approvalSteps: [
       { id: "REQ-LOCAL-HANDOFF-SOURCE-OWNER", name: "Owner Review", office: "Simbahayan", status: "Approved", sequence: 1 },
-      { id: "REQ-LOCAL-HANDOFF-SOURCE-FAC", name: "Facilities and Setup Review", office: "Facilities Management", status: "Pending", sequence: 2 }
+      { id: "REQ-LOCAL-HANDOFF-SOURCE-FAC", name: "OSG Support Review", office: "OSG", status: "Pending", sequence: 2 }
     ]
   });
   fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
@@ -470,7 +475,7 @@ test("supporting office can approve final step and create owner payment handoff"
     const login = await fetch(`${baseUrl}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "facilities.admin@ust.edu.ph", password: "Facilities2026!" })
+      body: JSON.stringify({ email: "osg.office.admin@ust.edu.ph", password: "OSGOfficeAdmin2026!" })
     });
     assert.equal(login.status, 200);
     const { token } = await login.json();
@@ -483,12 +488,12 @@ test("supporting office can approve final step and create owner payment handoff"
     const reservation = state.reservations.find((item) =>
       item.resourceName === "Projector Set A"
       && item.office === "Simbahayan"
-      && item.approvalSteps?.some((step) => step.office === "Facilities Management" && step.status === "Pending")
+      && item.approvalSteps?.some((step) => step.office === "OSG" && step.status === "Pending")
     );
     assert.ok(reservation);
-    const step = reservation.approvalSteps.find((item) => item.office === "Facilities Management" && item.status === "Pending");
+    const step = reservation.approvalSteps.find((item) => item.office === "OSG" && item.status === "Pending");
 
-    decideApprovalStep(reservation, step.id, true, "Facilities Office Admin", "Just now");
+    decideApprovalStep(reservation, step.id, true, "OSG Office Admin", "Just now");
     assert.equal(reservation.status, "For Payment");
     reservation.paymentId = "PAY-LOCAL-HANDOFF";
     state.payments.unshift({
@@ -501,7 +506,7 @@ test("supporting office can approve final step and create owner payment handoff"
       status: "Awaiting Receipt"
     });
     state.notifications.unshift({ id: "N-LOCAL-HANDOFF", user: reservation.requester, message: "Payment handoff created.", unread: true });
-    state.activity.unshift({ action: "Approval step approved", actor: "Facilities Office Admin", target: `${reservation.resourceName}: ${step.name}`, time: "Just now" });
+    state.activity.unshift({ action: "Approval step approved", actor: "OSG Office Admin", target: `${reservation.resourceName}: ${step.name}`, time: "Just now" });
 
     const save = await fetch(`${baseUrl}/api/state`, {
       method: "PUT",
@@ -800,7 +805,7 @@ test("super admin can mark visible notifications read through the local API", as
   const database = JSON.parse(originalDatabase);
   database.notifications.unshift(
     { id: "N-SUPER-READ-1", user: "Student Body Requester", message: "Requester alert.", unread: true, type: "System" },
-    { id: "N-SUPER-READ-2", user: "Facilities Office Admin", message: "Office alert.", unread: true, type: "System" }
+    { id: "N-SUPER-READ-2", user: "OSG Office Admin", message: "Office alert.", unread: true, type: "System" }
   );
   fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
 
@@ -1054,6 +1059,142 @@ test("Requester accounts accept a free-text department; Office Admin accounts st
     await once(server, "close");
     fs.writeFileSync(dbPath, originalDatabase);
     fs.writeFileSync(testAccountsPath, originalAccounts);
+  }
+});
+
+
+function seedReviewReminder(database, resource, alreadySent) {
+  database.reservations.push({
+    id: "REQ-REMINDER-RACE",
+    requester: "Fr. Jose",
+    resourceId: resource.id,
+    resourceName: resource.name,
+    office: "Simbahayan",
+    date: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10),
+    start: "09:00",
+    end: "10:00",
+    status: "Under Owner Review",
+    requiresPayment: false,
+    submittedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+    ...(alreadySent ? { reviewReminderSentAt: "already sent" } : {}),
+    approvalSteps: [{ id: "REQ-REMINDER-RACE-OWNER", office: "Simbahayan", status: "Pending", sequence: 1 }]
+  });
+  return database;
+}
+
+test("an office reminder that fires between load and save is not read as a client deletion", async () => {
+  const dbPath = testDbPath;
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const officeReminder = /waiting for review for more than 24 hours/i;
+  try {
+    const login = await (await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "simbahayan.admin@ust.edu.ph", password: "OfficeAdmin2026!" })
+    })).json();
+    const auth = { Authorization: `Bearer ${login.token}`, "Content-Type": "application/json" };
+
+    const source = JSON.parse(originalDatabase);
+    const resource = source.resources[0];
+    // Addressed to Simbahayan, so the Office Admin can see it and must not appear to delete it.
+    seedReviewReminder(source, resource, true);
+    fs.writeFileSync(dbPath, JSON.stringify(source, null, 2));
+
+    const clientState = await (await fetch(`${base}/api/state`, { headers: auth })).json();
+    assert.ok(!clientState.notifications.some((item) => officeReminder.test(item.message)));
+
+    // Time passes: the reminder is re-armed after the requester loaded the page.
+    const armed = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+    armed.reservations.find((item) => item.id === "REQ-REMINDER-RACE").reviewReminderSentAt = "";
+    armed.notifications = armed.notifications.filter((item) => !officeReminder.test(item.message));
+    fs.writeFileSync(dbPath, JSON.stringify(armed, null, 2));
+
+    const saved = await fetch(`${base}/api/state`, { method: "PUT", headers: auth, body: JSON.stringify(clientState) });
+    assert.equal(saved.status, 200, await saved.text());
+
+    const after = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+    assert.ok(after.notifications.some((item) => officeReminder.test(item.message)), "the reminder must survive the save");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.writeFileSync(dbPath, originalDatabase);
+  }
+});
+
+
+test("office admin can author approval workflows for their own office only", async () => {
+  const dbPath = testDbPath;
+  const originalDatabase = fs.readFileSync(dbPath, "utf8");
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  const base = `http://127.0.0.1:${port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "simbahayan.admin@ust.edu.ph", password: "OfficeAdmin2026!" })
+    });
+    assert.equal(login.status, 200);
+    const { token } = await login.json();
+    const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+    const stateResponse = await fetch(`${base}/api/state`, { headers: auth });
+    assert.equal(stateResponse.status, 200);
+    const state = await stateResponse.json();
+
+    const owned = {
+      id: "WF-LOCAL-SIMBA",
+      name: "Simbahayan Event Approval",
+      resourceType: "Vehicle",
+      status: "Active",
+      office: "Simbahayan",
+      steps: [
+        { id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1 },
+        { id: "OSG", name: "OSG Event Review", office: "OSG", sequence: 2 }
+      ]
+    };
+    const officeActivity = {
+      id: "ACT-LOCAL-WF",
+      action: "Approval workflow created",
+      actor: "Simbahayan Office Admin",
+      target: owned.name,
+      details: "",
+      time: "Just now"
+    };
+
+    let saved = await fetch(`${base}/api/state`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        ...state,
+        activity: [officeActivity, ...state.activity],
+        approvalTemplates: [...state.approvalTemplates, owned]
+      })
+    });
+    assert.equal(saved.status, 200, await saved.text());
+    const stored = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+    assert.ok(stored.approvalTemplates.some((item) => item.id === owned.id), "the office-owned workflow is stored");
+
+    // Editing a shared template the office does not own is rejected.
+    saved = await fetch(`${base}/api/state`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        ...state,
+        activity: [{ ...officeActivity, id: "ACT-LOCAL-WF2", action: "Approval workflow updated", target: "Basic Resource Approval" }, ...state.activity],
+        approvalTemplates: state.approvalTemplates.map((item) => (item.id === "WF-BASIC" ? { ...item, name: "Hijacked Workflow" } : item))
+      })
+    });
+    assert.equal(saved.status, 403, await saved.text());
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.writeFileSync(dbPath, originalDatabase);
   }
 });
 

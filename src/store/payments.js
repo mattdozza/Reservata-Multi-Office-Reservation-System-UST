@@ -104,5 +104,30 @@ export const paymentMethods = {
     }
     this.addActivity(verified ? "Payment verified" : "Payment rejected", this.currentUser.name, payment.reservationId, cleanReason || payment.receipt, reservation.id);
     await this.save(() => awsApi.verifyPayment(id, verified, cleanReason), previousData);
+  },
+
+  async reopenPayment(id) {
+    this.requireRole("officeAdmin");
+    const payment = this.data.payments.find((item) => item.id === id);
+    if (!payment) throw new Error("Payment not found.");
+    const reservation = this.data.reservations.find((item) => item.id === payment.reservationId);
+    this.requireOfficeRecord(reservation);
+    if (payment.status !== "Verified" || reservation?.status !== "Confirmed") {
+      throw new Error("Only a verified payment with a confirmed reservation can be reopened.");
+    }
+    const previousData = this.snapshot();
+    payment.status = "Pending Verification";
+    payment.verifiedAt = "";
+    payment.verifiedBy = "";
+    payment.rejectionReason = "";
+    reservation.status = "For Payment";
+    reservation.rejectionReason = "";
+    this.addNotification(
+      reservation.requester,
+      `${reservation.resourceName}: payment verification was reopened by ${this.currentUser.name}.`,
+      "Payment"
+    );
+    this.addActivity("Payment review reopened", this.currentUser.name, payment.reservationId, payment.receipt, reservation.id);
+    await this.save(() => awsApi.reopenPayment(id), previousData);
   }
 };

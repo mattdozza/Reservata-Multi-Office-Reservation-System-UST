@@ -24,6 +24,489 @@
   color: var(--blue);
 }
 
+/* Payment Verification: search + filter toolbar above the verification rows */
+.payment-toolbar {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.search-field {
+  position: relative;
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.search-field > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.search-field > .input {
+  width: 100%;
+  padding-left: 36px;
+}
+
+.payment-count {
+  margin: 0;
+  padding: 0 var(--panel-space) 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payment-row {
+  border-top: 1px solid var(--line);
+}
+
+.payment-row-main {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 18px var(--panel-space) 10px;
+}
+
+.payment-row-thumb {
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f7f4;
+}
+
+.payment-row-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.payment-row-thumb-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.payment-row-identity {
+  min-width: 0;
+}
+
+.payment-row-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.payment-row-title h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.payment-row-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 10px 0 0;
+}
+
+.payment-row-meta dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.payment-row-meta dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.payment-row-amount {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.payment-row-amount span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.payment-row-amount strong {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.payment-row > .decision-note {
+  margin: 0 var(--panel-space) 10px;
+}
+
+.payment-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--panel-space) 18px;
+}
+
+.payment-row-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.payment-row-details {
+  padding: 0 var(--panel-space) 18px;
+}
+
+.chevron-open {
+  transform: rotate(180deg);
+}
+
+.danger-outline {
+  border-color: rgba(185, 68, 68, 0.4);
+  color: #8d3131;
+}
+
+@media (max-width: 900px) {
+  .payment-row-main {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .payment-row-thumb {
+    width: 72px;
+    height: 72px;
+  }
+
+  .payment-row-amount {
+    grid-column: 1 / -1;
+    justify-items: start;
+    padding: 12px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    text-align: left;
+  }
+
+  .payment-row-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Reservation details: the single next action the requester still has to take */
+.next-step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 0 0 18px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #fafaf7;
+}
+
+.next-step-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid currentColor;
+}
+
+.next-step strong {
+  display: block;
+  font-size: 14px;
+}
+
+.next-step p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.next-step small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Needs the requester to act now */
+.next-step-action {
+  border-color: #f0dca4;
+  border-left-color: var(--sun);
+  background: #fffaf0;
+  color: #8b5b00;
+}
+
+/* Waiting on someone else */
+.next-step-progress {
+  border-color: #d2e4ea;
+  border-left-color: var(--blue);
+  background: #f4fafc;
+  color: var(--blue);
+}
+
+/* Finished successfully */
+.next-step-done {
+  border-color: #bfe3d0;
+  border-left-color: var(--green);
+  background: #f2faf6;
+  color: var(--green);
+}
+
+/* Stopped without success */
+.next-step-stopped {
+  border-color: #f2c6c3;
+  border-left-color: var(--red);
+  background: #fdf4f3;
+  color: var(--red);
+}
+
+/* New Request: office-configured bookable hours shown on the form */
+.office-window-note {
+  display: block;
+  border: 1px solid #d2e4ea;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f4fafc;
+  color: #1a7d9d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.office-window-note strong {
+  color: var(--ink);
+}
+
+/* Approval queue: FCFS position and resource-conflict notices */
+.fcfs-queue-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fcfs-queue-note strong {
+  color: var(--ink);
+}
+
+.approval-task .overdue-badge + .item-title {
+  margin-top: 8px !important;
+}
+
+/* New Request: payment instructions shown right after a paid request is submitted */
+.payment-instructions-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.payment-instructions-summary > div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fafaf7;
+}
+
+.payment-instructions-summary span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.payment-instructions-summary strong {
+  font-size: 16px;
+}
+
+.payment-instructions-note {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: #fafaf7;
+}
+
+.payment-instructions-note strong {
+  font-size: 13px;
+}
+
+.payment-instructions-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.payment-instructions-list {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: instruction;
+}
+
+.payment-instructions-list li {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.payment-instructions-number {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payment-instructions-list strong {
+  display: block;
+  font-size: 13px;
+}
+
+.payment-instructions-list small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.payment-instructions-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 560px) {
+  .payment-instructions-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* New Request: preview of the exact route a request will take */
+.request-journey {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: var(--panel-space);
+  list-style: none;
+}
+
+.request-journey-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+/* Connector line between consecutive markers */
+.request-journey-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 28px;
+  bottom: 0;
+  left: 13px;
+  width: 2px;
+  background: var(--line);
+}
+
+.request-journey-step:last-child {
+  padding-bottom: 0;
+}
+
+.request-journey-marker {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink-2);
+}
+
+.request-journey-step:last-child .request-journey-marker {
+  border-color: #bfe3d0;
+  background: #e7f5ef;
+  color: var(--green);
+}
+
+.request-journey-body {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  min-width: 0;
+}
+
+.request-journey-body strong {
+  font-size: 13px;
+}
+
+.request-journey-owner {
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: #fafaf7;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.request-journey-body small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .resource-photo {
   width: 100%;
   aspect-ratio: 4 / 3;
@@ -50,9 +533,22 @@
 
 .resource-photo-editor {
   display: grid;
-  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
-  align-items: center;
-  gap: 24px;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.resource-photo-editor .resource-photo {
+  border-radius: 8px;
+}
+
+/* Stack the label, upload control, help text and remove button as one control group */
+.resource-photo-editor > div {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
 }
 
 .resource-photo-editor input {
@@ -170,6 +666,11 @@
 }
 
 .view-root :is(.form-card, .profile-details, .parking-content) {
+  padding: var(--panel-space);
+}
+
+/* Resource editor cards keep their border and header, but still need a body inset */
+.view-root .resource-editor-card > .form-grid {
   padding: var(--panel-space);
 }
 
@@ -446,21 +947,6 @@
 
 .view-root .detail-box {
   overflow-wrap: anywhere;
-}
-
-.view-root .requirement-fields {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-}
-
-.view-root .requirement-fields .check-field {
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: start;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  padding: 14px 0;
 }
 
 .view-root .check-field strong {
@@ -979,6 +1465,230 @@
   .view-root .resource-filter-bar {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* New Request: availability calendar aligned with admin bookable hours */
+.availability-calendar-surface {
+  padding: 16px 18px;
+}
+
+.availability-calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.availability-calendar-nav strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.mini-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.mini-calendar-head {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.mini-calendar-day {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mini-calendar-day:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: #f4fafc;
+}
+
+.mini-calendar-day.selected {
+  border-color: var(--blue);
+  background: #e8f6f9;
+  box-shadow: 0 0 0 2px rgba(26, 125, 157, 0.2);
+}
+
+.mini-calendar-day.muted {
+  background: #f8f8f5;
+  color: #a1a5ad;
+  cursor: not-allowed;
+}
+
+.mini-calendar-day.available {
+  border-color: #bfe3d0;
+  background: #f5fcf8;
+}
+
+.mini-calendar-day.unavailable {
+  border-color: #f0dca4;
+  background: #fff4d8;
+}
+
+.mini-calendar-day.blocked {
+  border-color: #f2c6c3;
+  background: #fce9e7;
+  cursor: not-allowed;
+}
+
+.mini-calendar-legend {
+  display: flex;
+  gap: 16px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  flex-wrap: wrap;
+}
+
+.mini-calendar-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.mini-calendar-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.mini-calendar-legend-swatch.available { border-color: #bfe3d0; background: #f5fcf8; }
+.mini-calendar-legend-swatch.unavailable { border-color: #f0dca4; background: #fff4d8; }
+.mini-calendar-legend-swatch.blocked { border-color: #f2c6c3; background: #fce9e7; }
+
+/* New Request: form column slightly narrower than the calendar column */
+.view-root .request-layout {
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+/* New Request: dashed fee panel under the resource picker */
+.view-root .fee-notice {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  border: 1px dashed #e2a33c;
+  border-radius: 8px;
+  background: #fdf7ea;
+  padding: 14px 16px;
+}
+
+.view-root .fee-notice-badge {
+  border-radius: 999px;
+  background: #e2a33c;
+  color: #fff;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.view-root .fee-notice-amount {
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.view-root .fee-notice p {
+  margin: 0;
+  color: #7a5a18;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* New Request: the date is picked from the calendar, so the field shows a chip instead of a picker */
+.view-root .field-hint-chip {
+  width: fit-content;
+  border-radius: 6px;
+  background: #1f2430;
+  color: #fff;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* New Request: large calendar cells with the time slot panel docked below the grid */
+.view-root .request-calendar-surface {
+  display: grid;
+  gap: 0;
+  padding: 0;
+}
+
+.view-root .request-calendar-surface .availability-calendar-nav {
+  margin: 0;
+  padding: 18px 18px 12px;
+}
+
+.request-calendar-grid {
+  gap: 6px;
+  padding: 0 18px 18px;
+}
+
+.request-calendar-grid .mini-calendar-head {
+  padding: 0 0 4px;
+  font-size: 11px;
+}
+
+.request-calendar-grid .mini-calendar-day {
+  aspect-ratio: 1.5;
+  align-content: end;
+  justify-items: end;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.view-root .request-calendar-surface .mini-calendar-legend {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding: 14px 18px;
+}
+
+.request-slot-panel {
+  display: grid;
+  border-top: 1px solid var(--line);
+  padding: 18px;
+  gap: 14px;
+}
+
+.request-slot-hint {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.request-slot-panel .availability-panel {
+  margin: 0;
+}
+
+.request-slot-panel .slot-schedule {
+  gap: 12px;
+}
+
+/* New Request: the calendar card fills its column so the slot panel stays under the grid */
+.view-root .request-calendar-card {
+  display: grid;
+  align-content: start;
 }
 
 /* Browse resources pagination */

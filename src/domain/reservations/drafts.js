@@ -7,8 +7,7 @@ export function readReservationDraft(key) {
     return {
       resourceId: String(draft.resourceId || ""),
       purpose: String(draft.purpose || ""),
-      slot: Object.fromEntries(["date", "start", "end", "quantity"].map((field) => [field, String(draft.slot[field] || "")])),
-      requirements: draft.requirements && typeof draft.requirements === "object" ? draft.requirements : {}
+      slot: Object.fromEntries(["date", "start", "end", "quantity"].map((field) => [field, String(draft.slot[field] || "")]))
     };
   } catch { return null; }
 }

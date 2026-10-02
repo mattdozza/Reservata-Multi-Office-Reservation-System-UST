@@ -22,19 +22,19 @@ function daysFromTodayIso(days) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
-test("conditional workflow activates reviews in parallel before payment", async () => {
+test("tiered workflow runs same-tier reviews in parallel before payment", async () => {
   const { buildApprovalSteps, decideApprovalStep } = await import("../src/domain/workflows.js");
   const template = {
     steps: [
-      { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1, condition: "always" },
-      { id: "FAC", name: "Facilities", office: "Facilities Management", sequence: 2, condition: "setupRequired" },
-      { id: "OSG", name: "OSG", office: "OSG", sequence: 2, condition: "externalVisitors" }
+      { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1 },
+      { id: "FAC", name: "Facilities", office: "Facilities Management", sequence: 2 },
+      { id: "OSG", name: "OSG", office: "OSG", sequence: 2 }
     ]
   };
   const reservation = {
     requiresPayment: true,
     status: "Under Owner Review",
-    approvalSteps: buildApprovalSteps(template, { office: "Simbahayan" }, { setupRequired: true, externalVisitors: true }, "REQ-1")
+    approvalSteps: buildApprovalSteps(template, { office: "Simbahayan" }, "REQ-1")
   };
 
   assert.deepEqual(reservation.approvalSteps.map((step) => step.status), ["Pending", "Waiting", "Waiting"]);
@@ -54,9 +54,9 @@ test("a rejected approval stops the remaining route", async () => {
     requiresPayment: false,
     status: "Under Owner Review",
     approvalSteps: buildApprovalSteps({ steps: [
-      { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1, condition: "always" },
-      { id: "NEXT", name: "Next", office: "OSG", sequence: 2, condition: "always" }
-    ] }, { office: "Simbahayan" }, {}, "REQ-2")
+      { id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1 },
+      { id: "NEXT", name: "Next", office: "OSG", sequence: 2 }
+    ] }, { office: "Simbahayan" }, "REQ-2")
   };
   decideApprovalStep(reservation, "REQ-2-OWNER", false, "Owner Admin", "now");
   assert.equal(reservation.status, "Rejected");
@@ -149,7 +149,7 @@ test("requesters must reserve at least one day before use", async () => {
   store.applyAuthenticatedUser(store.localUser);
   store.setData({
     resources: [{ id: "R-1", name: "Projector", type: "Equipment", office: "EdTech", status: "Available", capacity: 1, workflowTemplateId: "WF-BASIC" }],
-    approvalTemplates: [{ id: "WF-BASIC", name: "Basic", status: "Active", steps: [{ id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1, condition: "always" }] }]
+    approvalTemplates: [{ id: "WF-BASIC", name: "Basic", status: "Active", steps: [{ id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1 }] }]
   });
 
   await assert.rejects(
@@ -399,7 +399,7 @@ test("office admin gets generated asset tags and can save searchable labels", as
   store.applyAuthenticatedUser(store.localUser);
   store.setData({
     resources: [{ id: "R-EXISTING", assetTag: "EDTECH-PROJ-001", name: "Projector", type: "Equipment", office: "EdTech", status: "Available", capacity: 1, workflowTemplateId: "WF-BASIC" }],
-    approvalTemplates: [{ id: "WF-BASIC", name: "Basic Resource Approval", status: "Active", steps: [{ id: "OWNER", name: "Owner Review", office: "$OWNER", sequence: 1, condition: "always" }] }]
+    approvalTemplates: [{ id: "WF-BASIC", name: "Basic Resource Approval", status: "Active", steps: [{ id: "OWNER", name: "Owner Review", office: "$OWNER", sequence: 1 }] }]
   });
 
   await store.saveResource({
@@ -499,45 +499,6 @@ test("super admin can provision a valid UST SSO email", async () => {
   assert.ok(store.data.people.some((person) => person.email === "lebronjames@ust.edu.ph"));
 });
 
-test("super admin can manage additional requirement options", async () => {
-  const storage = new Map();
-  global.localStorage = {
-    getItem: (key) => storage.get(key) || null,
-    setItem: (key, value) => storage.set(key, String(value)),
-    removeItem: (key) => storage.delete(key)
-  };
-  global.sessionStorage = {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {}
-  };
-
-  const { ReservataStore } = await import("../src/store.js");
-  const store = new ReservataStore();
-  store.apiAvailable = false;
-  store.localUser = {
-    name: "All Offices Super Admin",
-    role: "Super Admin",
-    office: "All Offices",
-    email: "all.offices.admin@ust.edu.ph"
-  };
-  store.applyAuthenticatedUser(store.localUser);
-  store.setData({ systemSettings: [{ id: "SYSTEM" }] });
-
-  await store.saveRequirementOption({
-    id: "cateringRequired",
-    label: "Catering support",
-    help: "Routes requests that need catering tables, food setup, or serving support.",
-    status: "Active"
-  });
-
-  assert.ok(store.requirementOptions.some((item) => item.id === "cateringRequired"));
-
-  await store.archiveRequirementOption("cateringRequired");
-  assert.ok(!store.requirementOptions.some((item) => item.id === "cateringRequired"));
-  assert.ok(store.allRequirementOptions.some((item) => item.id === "cateringRequired" && item.status === "Archived"));
-});
-
 test("super admin can update the default payment deadline window", async () => {
   installStorage();
   const { ReservataStore } = await import("../src/store.js");
@@ -556,4 +517,120 @@ test("super admin can update the default payment deadline window", async () => {
 
   assert.equal(store.settings.paymentDeadlineHours, 48);
   await assert.rejects(() => store.updatePaymentDeadlineSettings(200), /whole number from 1 to 168/);
+});
+
+test("super admin can edit the payment instructions shown to requesters", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "All Offices Super Admin",
+    role: "Super Admin",
+    office: "All Offices",
+    email: "all.offices.admin@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({ systemSettings: [{ id: "SYSTEM", paymentDeadlineHours: 24 }] });
+
+  // A missing value falls back to the shipped default.
+  assert.match(store.settings.paymentInstructions, /Upload the official receipt/);
+
+  await store.updatePaymentSettings({
+    paymentDeadlineHours: 12,
+    paymentInstructions: "Pay at the Simbahayan cashier and upload the receipt within the window."
+  });
+
+  assert.equal(store.settings.paymentDeadlineHours, 12);
+  assert.match(store.settings.paymentInstructions, /Simbahayan cashier/);
+
+  await assert.rejects(
+    () => store.updatePaymentSettings({ paymentDeadlineHours: 12, paymentInstructions: "short" }),
+    /at least 10 characters/
+  );
+});
+
+test("office admin can author an approval workflow for their own office", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "Simbahayan Office Admin",
+    role: "Office Admin",
+    office: "Simbahayan",
+    email: "simbahayan.admin@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({
+    offices: [
+      { id: "OFF-1", name: "Simbahayan", status: "Active" },
+      { id: "OFF-2", name: "OSG", status: "Active" }
+    ],
+    approvalTemplates: [{
+      id: "WF-BASIC",
+      name: "Basic Resource Approval",
+      status: "Active",
+      steps: [{ id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1 }]
+    }]
+  });
+
+  const workflow = await store.saveWorkflow({
+    name: "Simbahayan Event Approval",
+    resourceType: "Vehicle",
+    steps: [
+      { id: "OWNER", name: "Resource Owner Review", office: "$OWNER", sequence: 1 },
+      { id: "OSG", name: "OSG Event Review", office: "OSG", sequence: 2 }
+    ]
+  });
+
+  assert.equal(workflow.office, "Simbahayan");
+  assert.ok(store.data.approvalTemplates.some((item) => item.id === workflow.id));
+
+  // A shared template the office does not own cannot be edited from their page.
+  await assert.rejects(
+    () => store.saveWorkflow({
+      name: "Hijacked",
+      steps: [{ id: "OWNER", name: "Owner", office: "$OWNER", sequence: 1 }]
+    }, "WF-BASIC"),
+    /only edit approval workflows they created/
+  );
+});
+
+test("a verified payment can be reopened for another verification pass", async () => {
+  installStorage();
+  const { ReservataStore } = await import("../src/store.js");
+  const store = new ReservataStore();
+  store.apiAvailable = false;
+  store.localUser = {
+    name: "Simbahayan Admin",
+    role: "Office Admin",
+    office: "Simbahayan",
+    email: "simbahayan.admin@ust.edu.ph"
+  };
+  store.applyAuthenticatedUser(store.localUser);
+  store.setData({
+    reservations: [{ id: "REQ-1", requester: "Fr. Jose", resourceName: "Sound System", office: "Simbahayan", status: "Confirmed" }],
+    payments: [{ id: "PAY-1", reservationId: "REQ-1", office: "Simbahayan", status: "Verified", amount: 850, receipt: "receipt.jpg", verifiedAt: "Aug 28, 2026", verifiedBy: "Simbahayan Admin" }]
+  });
+
+  await store.reopenPayment("PAY-1");
+  assert.equal(store.data.payments[0].status, "Pending Verification");
+  assert.equal(store.data.payments[0].verifiedBy, "");
+  assert.equal(store.data.payments[0].verifiedAt, "");
+  assert.equal(store.data.reservations[0].status, "For Payment");
+  assert.ok(store.data.notifications.some((item) => item.type === "Payment"));
+
+  // Only a verified payment with a confirmed reservation may be reopened.
+  store.data.payments[0].status = "Rejected";
+  store.data.reservations[0].status = "Rejected";
+  await assert.rejects(() => store.reopenPayment("PAY-1"), /verified payment with a confirmed reservation/);
+
+  // Another office may not reopen this record.
+  const other = new ReservataStore();
+  other.apiAvailable = false;
+  other.localUser = { name: "Facilities Admin", role: "Office Admin", office: "Facilities Management", email: "facilities.admin@ust.edu.ph" };
+  other.applyAuthenticatedUser(other.localUser);
+  other.setData(structuredClone(store.data));
+  await assert.rejects(() => other.reopenPayment("PAY-1"), /office assigned to this request/);
 });

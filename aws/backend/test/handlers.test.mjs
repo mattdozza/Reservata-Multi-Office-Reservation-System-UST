@@ -134,7 +134,7 @@ test("Requester submission creates reservation, notification, and activity atomi
     async get(table) {
       if (table === "Users") return { email: "requester@ust.edu.ph", name: "Requester", office: "CICS", role: "Requester", status: "Active" };
       if (table === "Resources") return { id: "R-1", name: "Projector", office: "Simbahayan", type: "Equipment", status: "Available", requiresPayment: false, workflowTemplateId: "WF-BASIC" };
-      if (table === "ApprovalWorkflows") return { id: "WF-BASIC", name: "Basic Resource Approval", status: "Active", steps: [{ id: "OWNER", name: "Owner Review", office: "$OWNER", sequence: 1, condition: "always" }] };
+      if (table === "ApprovalWorkflows") return { id: "WF-BASIC", name: "Basic Resource Approval", status: "Active", steps: [{ id: "OWNER", name: "Owner Review", office: "$OWNER", sequence: 1 }] };
       return null;
     },
     async query() { return []; },
@@ -573,12 +573,12 @@ test("only Super Admin can update payment deadline settings", async () => {
   const allowedRepo = {
     async get(table) {
       if (table === "Users") return { email: "super@ust.edu.ph", name: "Super", office: "All Offices", role: "Super Admin", status: "Active" };
-      if (table === "SystemSettings") return { id: "SYSTEM", paymentDeadlineHours: 24, requirementOptions: [] };
+      if (table === "SystemSettings") return { id: "SYSTEM", paymentDeadlineHours: 24 };
       return null;
     },
     async transact(items) { transaction = items; }
   };
-  const allowed = await createAdminHandler(allowedRepo)(event("PATCH", "super@ust.edu.ph", { paymentDeadlineHours: 36, requirementOptions: [] }, {}, "/settings"));
+  const allowed = await createAdminHandler(allowedRepo)(event("PATCH", "super@ust.edu.ph", { paymentDeadlineHours: 36 }, {}, "/settings"));
   assert.equal(allowed.statusCode, 200);
   const body = JSON.parse(allowed.body);
   assert.equal(body.paymentDeadlineHours, 36);
